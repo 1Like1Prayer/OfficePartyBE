@@ -6,7 +6,7 @@
  */
 
 /** Bumped whenever a message shape changes. Mismatched clients are asked to reload. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 export const ROOM = {
     /** Room codes are 4 characters from an unambiguous alphabet. */
@@ -25,8 +25,12 @@ export const ROOM = {
 } as const;
 
 export const COMPETITION = {
-    /** Every selected game is played twice; each play is worth one point. */
-    ROUNDS_PER_GAME: 2,
+    /**
+     * How many times each selected game is played. Each play is a scoring
+     * round worth one point. The owner picks from ROUNDS_PER_GAME_OPTIONS.
+     */
+    DEFAULT_ROUNDS_PER_GAME: 2,
+    ROUNDS_PER_GAME_OPTIONS: [2, 3, 5] as const,
     /** How many games random mode picks (capped by how many are implemented). */
     RANDOM_PLAYLIST_SIZE: 5,
     MAX_CUSTOM_PLAYLIST_SIZE: 10,

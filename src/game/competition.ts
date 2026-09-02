@@ -81,16 +81,24 @@ export interface RoundPosition {
 export class Competition {
     readonly mode: PlaylistMode;
     readonly playlist: readonly GameId[];
+    /** How many scoring rounds each game gets. Chosen by the owner. */
+    readonly roundsPerGame: number;
 
     private gameCursor = 0;
     private roundCursor = 0;
     private roundIdCounter = 0;
     private readonly scores = new Map<string, number>();
 
-    constructor(mode: PlaylistMode, playlist: readonly GameId[], players: readonly string[]) {
-        this.mode = mode;
-        this.playlist = playlist;
-        for (const playerId of players) this.scores.set(playerId, 0);
+    constructor(params: {
+        mode: PlaylistMode;
+        playlist: readonly GameId[];
+        roundsPerGame: number;
+        players: readonly string[];
+    }) {
+        this.mode = params.mode;
+        this.playlist = params.playlist;
+        this.roundsPerGame = params.roundsPerGame;
+        for (const playerId of params.players) this.scores.set(playerId, 0);
     }
 
     /** Players who join mid-competition watch, but exist on the score table at 0. */
@@ -126,7 +134,7 @@ export class Competition {
     /** Move past the round just finished. Returns false when the match is over. */
     advance(): boolean {
         this.roundCursor += 1;
-        if (this.roundCursor >= COMPETITION.ROUNDS_PER_GAME) {
+        if (this.roundCursor >= this.roundsPerGame) {
             this.roundCursor = 0;
             this.gameCursor += 1;
         }
@@ -166,8 +174,8 @@ export class Competition {
         return {
             mode: this.mode,
             playlist: [...this.playlist],
-            roundsPerGame: COMPETITION.ROUNDS_PER_GAME,
-            totalRounds: this.playlist.length * COMPETITION.ROUNDS_PER_GAME
+            roundsPerGame: this.roundsPerGame,
+            totalRounds: this.playlist.length * this.roundsPerGame
         };
     }
 }

@@ -12,7 +12,7 @@
 import type { Namespace, Socket } from 'socket.io';
 import { z } from 'zod';
 import logger from '../logger/logger';
-import { PROTOCOL_VERSION, ROOM } from '../shared/constants';
+import { COMPETITION, PROTOCOL_VERSION, ROOM } from '../shared/constants';
 import { GAME_IDS } from '../shared/games/catalog';
 import {
     ClientEvent,
@@ -45,6 +45,10 @@ const setModeSchema = z.object({
     mode: z.enum(['random', 'custom']),
     gameIds: z.array(gameIdSchema).max(10).optional()
 });
+const setRoundsSchema = z.object({
+    roundsPerGame: z.number().int()
+});
+const setReadySchema = z.object({ ready: z.boolean() });
 const roundEnvelopeSchema = z.object({
     roundId: z.number().int().nonnegative(),
     attempt: z.number().int().nonnegative()
@@ -235,6 +239,51 @@ export const registerGameNamespace = (namespace: Namespace): void => {
                         parsed.data.gameIds
                     )
                 )
+            );
+        });
+
+        handle(ClientEvent.SetRounds, (payload, ack) => {
+            const membership = requireMembership();
+            if ('ok' in membership) {
+                respond(ack, membership);
+                return;
+            }
+            const parsed = setRoundsSchema.safeParse(payload);
+            if (!parsed.success) {
+                respond(
+                    ack,
+                    err(
+                        'invalid_rounds',
+                        `Rounds per game must be one of ${COMPETITION.ROUNDS_PER_GAME_OPTIONS.join(', ')}.`
+                    )
+                );
+                return;
+            }
+            respond(
+                ack,
+                toAck(
+                    membership.room.setRoundsPerGame(
+                        membership.playerId,
+                        parsed.data.roundsPerGame
+                    )
+                )
+            );
+        });
+
+        handle(ClientEvent.SetReady, (payload, ack) => {
+            const membership = requireMembership();
+            if ('ok' in membership) {
+                respond(ack, membership);
+                return;
+            }
+            const parsed = setReadySchema.safeParse(payload);
+            if (!parsed.success) {
+                respond(ack, err('invalid_payload', 'Bad ready payload.'));
+                return;
+            }
+            respond(
+                ack,
+                toAck(membership.room.setReady(membership.playerId, parsed.data.ready))
             );
         });
 

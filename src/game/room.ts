@@ -12,14 +12,17 @@ import type {
     ErrorCode,
     GameStartingPayload,
     JoinAckData,
+    LobbyView,
     PlayerView,
     PlaylistMode,
     RoomPhase,
     RoomStatePayload,
-    RoundView
+    RoundView,
+    StartBlockedReason
 } from '../shared/protocol';
 import { ServerEvent } from '../shared/protocol';
 import { buildCustomPlaylist, buildRandomPlaylist, Competition } from './competition';
+import { playableGameIds } from './registry';
 import { monotonicNowMs } from './clock';
 import { newPlayerId, sanitizeName } from './ids';
 import { getSelfTimedModule } from './registry';
@@ -50,6 +53,8 @@ interface Player {
     disconnectedAt: number | null;
     /** Joined after the competition started; watches until the next lobby. */
     isSpectator: boolean;
+    /** Pressed ready in the lobby. The owner is held at true. */
+    ready: boolean;
     dropTimer: NodeJS.Timeout | null;
 }
 
@@ -71,6 +76,7 @@ export class Room {
 
     private mode: PlaylistMode = 'random';
     private customPlaylist: GameId[] = [];
+    private roundsPerGame: number = COMPETITION.DEFAULT_ROUNDS_PER_GAME;
 
     private competition: Competition | null = null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -116,7 +122,7 @@ export class Room {
             existing.disconnectedAt = null;
             existing.name = sanitizeName(params.name, existing.name);
             this.emptySinceMs = null;
-            if (this.ownerId === null) this.ownerId = existing.playerId;
+            if (this.ownerId === null) this.claimOwnership(existing.playerId);
 
             if (wasDisconnected) {
                 this.emitter.toRoom(ServerEvent.PlayerReconnected, {
@@ -152,12 +158,15 @@ export class Room {
             // Joining late is free in the lobby; once a competition is running
             // the newcomer watches until it returns to the lobby.
             isSpectator: this.phase !== 'lobby',
+            ready: false,
             dropTimer: null
         };
         this.players.set(playerId, player);
         this.competition?.ensurePlayer(playerId);
         this.emptySinceMs = null;
-        if (this.ownerId === null) this.ownerId = playerId;
+        // The room's creator owns it, and an owner is always ready — they are
+        // the one who presses start.
+        if (this.ownerId === null) this.claimOwnership(playerId);
 
         this.emitter.toRoom(ServerEvent.PlayerJoined, {
             playerId,
@@ -242,13 +251,26 @@ export class Room {
             .sort((a, b) => a.joinedAt - b.joinedAt);
 
         const next = candidates[0] ?? null;
-        this.ownerId = next?.playerId ?? null;
-        if (next) {
-            this.emitter.toRoom(ServerEvent.OwnerChanged, {
-                ownerId: next.playerId,
-                name: next.name
-            });
+        if (!next) {
+            this.ownerId = null;
+            return;
         }
+        this.claimOwnership(next.playerId);
+        this.emitter.toRoom(ServerEvent.OwnerChanged, {
+            ownerId: next.playerId,
+            name: next.name
+        });
+    }
+
+    /**
+     * Whoever owns the room is ready by definition — they hold the start
+     * button, so there is nothing for them to signal, and an unready owner
+     * could never start the match.
+     */
+    private claimOwnership(playerId: string): void {
+        this.ownerId = playerId;
+        const owner = this.players.get(playerId);
+        if (owner) owner.ready = true;
     }
 
     private checkEmpty(): void {
@@ -301,6 +323,38 @@ export class Room {
         return { ok: true, data: { mode: this.mode, playlist: this.customPlaylist } };
     }
 
+    /** Toggle a player's lobby ready flag. The owner is always ready. */
+    setReady(playerId: string, ready: boolean): RoomResult<{ ready: boolean }> {
+        const player = this.players.get(playerId);
+        if (!player) return fail('not_in_room', 'You are not in this room.');
+        if (this.phase !== 'lobby') {
+            return fail('wrong_phase', 'Ready only applies in the lobby.');
+        }
+        player.ready = playerId === this.ownerId ? true : ready;
+        this.broadcastState();
+        return { ok: true, data: { ready: player.ready } };
+    }
+
+    /** How many scoring rounds each chosen game gets. Owner only. */
+    setRoundsPerGame(
+        playerId: string,
+        roundsPerGame: number
+    ): RoomResult<{ roundsPerGame: number }> {
+        const guard = this.requireOwnerInLobby(playerId);
+        if (guard) return guard;
+
+        const options: readonly number[] = COMPETITION.ROUNDS_PER_GAME_OPTIONS;
+        if (!options.includes(roundsPerGame)) {
+            return fail(
+                'invalid_rounds',
+                `Rounds per game must be one of ${options.join(', ')}.`
+            );
+        }
+        this.roundsPerGame = roundsPerGame;
+        this.broadcastState();
+        return { ok: true, data: { roundsPerGame } };
+    }
+
     startCompetition(playerId: string): RoomResult<{ playlist: GameId[] }> {
         const guard = this.requireOwnerInLobby(playerId);
         if (guard) return guard;
@@ -312,6 +366,15 @@ export class Room {
                 `Need at least ${ROOM.MIN_PLAYERS} connected players.`
             );
         }
+        // Everyone who is here has to have said they are ready. A player
+        // holding a disconnected slot does not block the room.
+        const waitingFor = active.filter((p) => !p.ready);
+        if (waitingFor.length > 0) {
+            return fail(
+                'players_not_ready',
+                `Waiting on ${waitingFor.map((p) => p.name).join(', ')}.`
+            );
+        }
 
         const playlist =
             this.mode === 'custom' ? this.customPlaylist : buildRandomPlaylist();
@@ -319,11 +382,12 @@ export class Room {
             return fail('invalid_playlist', 'No playable games are available.');
         }
 
-        this.competition = new Competition(
-            this.mode,
+        this.competition = new Competition({
+            mode: this.mode,
             playlist,
-            active.map((p) => p.playerId)
-        );
+            roundsPerGame: this.roundsPerGame,
+            players: active.map((p) => p.playerId)
+        });
         this.phase = 'competition';
         this.emitter.toRoom(
             ServerEvent.Playlist,
@@ -441,7 +505,7 @@ export class Room {
 
         const described = this.round?.describe();
         this.lastRoundView = described
-            ? { ...described, roundsPerGame: COMPETITION.ROUNDS_PER_GAME }
+            ? { ...described, roundsPerGame: this.roundsPerGame }
             : null;
         this.setPhaseTimer(
             () => this.advanceRound(),
@@ -504,8 +568,12 @@ export class Room {
         this.competition = null;
         this.lastRoundView = null;
         this.phase = 'lobby';
-        // Spectators from the finished match become players again.
-        for (const player of this.players.values()) player.isSpectator = false;
+        // Spectators from the finished match become players again, and
+        // everyone re-confirms before the next one.
+        for (const player of this.players.values()) {
+            player.isSpectator = false;
+            player.ready = player.playerId === this.ownerId;
+        }
         this.clearPhaseTimer();
         this.broadcastState();
     }
@@ -580,6 +648,7 @@ export class Room {
                 connected: player.connected,
                 isOwner: player.playerId === this.ownerId,
                 isSpectator: player.isSpectator,
+                ready: player.ready,
                 points: scores.get(player.playerId) ?? 0
             }));
 
@@ -593,10 +662,42 @@ export class Room {
                 ? [...this.competition.playlist]
                 : [...this.customPlaylist],
             catalog: GAME_IDS.map((id) => GAME_CATALOG[id]),
+            lobby: this.lobbyView(),
             round: this.roundView(),
             serverTimeMs: monotonicNowMs(),
             minPlayers: ROOM.MIN_PLAYERS,
             maxPlayers: ROOM.MAX_PLAYERS
+        };
+    }
+
+    /**
+     * What the lobby screen renders: who is ready, who the room is waiting on,
+     * and whether the owner can start yet. `blockedReason` means the client
+     * never has to re-derive the start rules.
+     */
+    private lobbyView(): LobbyView {
+        const active = this.activePlayers();
+        const ready = active.filter((p) => p.ready);
+        const waitingFor = active.filter((p) => !p.ready);
+        const allReady = active.length > 0 && waitingFor.length === 0;
+
+        const playlist =
+            this.mode === 'custom' ? this.customPlaylist : playableGameIds();
+
+        let blockedReason: StartBlockedReason | null = null;
+        if (active.length < ROOM.MIN_PLAYERS) blockedReason = 'not_enough_players';
+        else if (!allReady) blockedReason = 'players_not_ready';
+        else if (playlist.length === 0) blockedReason = 'invalid_playlist';
+
+        return {
+            ready: ready.map((p) => p.playerId),
+            waitingFor: waitingFor.map((p) => p.playerId),
+            allReady,
+            canStart: this.phase === 'lobby' && blockedReason === null,
+            blockedReason,
+            roundsPerGame: this.roundsPerGame,
+            roundsPerGameOptions: [...COMPETITION.ROUNDS_PER_GAME_OPTIONS],
+            playableGames: playableGameIds()
         };
     }
 
@@ -611,7 +712,7 @@ export class Room {
                 gameIndex: 0,
                 totalGames: this.competition?.playlist.length ?? 0,
                 roundInGame: 0,
-                roundsPerGame: COMPETITION.ROUNDS_PER_GAME,
+                roundsPerGame: this.roundsPerGame,
                 isTiebreak: false,
                 participants: [],
                 ready: [],
@@ -619,7 +720,7 @@ export class Room {
                 startAtServerMs: null
             };
         }
-        return { ...described, roundsPerGame: COMPETITION.ROUNDS_PER_GAME };
+        return { ...described, roundsPerGame: this.roundsPerGame };
     }
 
     broadcastState(): void {

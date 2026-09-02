@@ -23,6 +23,8 @@ export const ClientEvent = {
     SetName: 'room:setName',
     RequestState: 'room:requestState',
     SetMode: 'lobby:setMode',
+    SetRounds: 'lobby:setRounds',
+    SetReady: 'lobby:ready',
     StartCompetition: 'lobby:start',
     SkipResults: 'competition:skip',
     Ready: 'round:ready',
@@ -70,7 +72,9 @@ export type ErrorCode =
     | 'not_owner'
     | 'not_in_room'
     | 'not_enough_players'
+    | 'players_not_ready'
     | 'invalid_playlist'
+    | 'invalid_rounds'
     | 'invalid_payload'
     | 'wrong_phase'
     | 'stale_round'
@@ -110,8 +114,39 @@ export interface PlayerView {
     isOwner: boolean;
     /** Joined after the competition started, so they watch rather than play. */
     isSpectator: boolean;
+    /**
+     * Pressed ready in the lobby. The owner is always ready — they start the
+     * match, so there is nothing for them to signal.
+     */
+    ready: boolean;
     points: number;
 }
+
+/**
+ * Everything the lobby screen needs to render itself: who the room is waiting
+ * on, whether start is available, and the settings the owner can change.
+ */
+export interface LobbyView {
+    /** Connected players who are ready. Always includes the owner. */
+    ready: string[];
+    /** Connected players the room is still waiting on. */
+    waitingFor: string[];
+    allReady: boolean;
+    /** True when the owner can press start right now. */
+    canStart: boolean;
+    /** Why start is unavailable, or null when it is. */
+    blockedReason: StartBlockedReason | null;
+    roundsPerGame: number;
+    /** The values roundsPerGame may be set to. */
+    roundsPerGameOptions: number[];
+    /** The set list the owner picks from — games that are actually built. */
+    playableGames: GameId[];
+}
+
+export type StartBlockedReason =
+    | 'not_enough_players'
+    | 'players_not_ready'
+    | 'invalid_playlist';
 
 export interface RoundView {
     phase: RoundPhase;
@@ -139,6 +174,7 @@ export interface RoomStatePayload {
     mode: PlaylistMode;
     playlist: GameId[];
     catalog: GameMeta[];
+    lobby: LobbyView;
     round: RoundView;
     /** Current server monotonic time, so a late joiner can sync its offset. */
     serverTimeMs: number;

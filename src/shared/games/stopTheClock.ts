@@ -26,10 +26,11 @@ export const STOP_THE_CLOCK = {
      */
     MAX_ELAPSED_MS: 60_000,
     /**
-     * Slack on top of the target before the server resolves without a player.
-     * Covers the countdown, a slow tab, and someone who simply never stops.
+     * Slack on top of the target before the server resolves the round itself.
+     * If someone never reports, the round closes at target + 4 s and is scored
+     * from whatever arrived.
      */
-    RESULT_GRACE_MS: 20_000
+    RESULT_GRACE_MS: 4_000
 } as const;
 
 export interface StopTheClockRound {

@@ -87,12 +87,17 @@ export type RoomPhase = 'lobby' | 'competition' | 'leaderboard';
 /**
  * The round's own lifecycle, from section 6:
  * Loading -> ReadyCheck -> Start -> Playing -> Results.
+ *
+ * `countdown` is the 3, 2, 1 the client shows between the scheduled start and
+ * the clock running. Nothing is timed during it and results are not accepted
+ * yet — the round is not counting.
  */
 export type RoundPhase =
     | 'idle'
     | 'loading'
     | 'ready-check'
     | 'starting'
+    | 'countdown'
     | 'playing'
     | 'results';
 
@@ -179,10 +184,19 @@ export interface ReadyStatePayload extends RoundEnvelope {
 
 export interface StartAtPayload extends RoundEnvelope {
     /**
-     * Server monotonic time. The client converts it to a local time using its
-     * own measured offset — that conversion is the only thing ping is for.
+     * Server monotonic time the round starts and the countdown begins. The
+     * client converts it to a local time using its own measured offset — that
+     * conversion is the only thing ping is for.
      */
     startAtServerMs: number;
+    /** How long the client shows "3, 2, 1" for. */
+    countdownMs: number;
+    /**
+     * When the clock actually runs: startAtServerMs + countdownMs. This is the
+     * zero the client measures its elapsed time from, and the moment the
+     * server starts counting toward the result deadline.
+     */
+    timingStartsAtServerMs: number;
     serverTimeMs: number;
 }
 

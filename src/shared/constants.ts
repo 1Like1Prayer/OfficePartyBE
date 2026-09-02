@@ -6,7 +6,7 @@
  */
 
 /** Bumped whenever a message shape changes. Mismatched clients are asked to reload. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 export const ROOM = {
     /** Room codes are 4 characters from an unambiguous alphabet. */
@@ -47,6 +47,12 @@ export const SELF_TIMED = {
      * rather than hanging the room.
      */
     READY_CHECK_TIMEOUT_MS: 20_000,
+    /**
+     * The visible "3, 2, 1" between the round starting and the clock actually
+     * running. The server does not start counting until it has elapsed, so a
+     * player's timing window is the same interval they were shown.
+     */
+    COUNTDOWN_MS: 3_000,
     /** Clients send progress at roughly this rate, purely for display. */
     PROGRESS_HZ: 5,
     /** Server-side floor on the gap between progress messages from one player. */

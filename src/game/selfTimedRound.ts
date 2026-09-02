@@ -289,9 +289,12 @@ export class SelfTimedRound<TRound, TResult> {
             roundId: this.roundId,
             attempt: this.attemptIndex,
             startAtServerMs: this.startAtServerMs,
+            countdownMs: SELF_TIMED.COUNTDOWN_MS,
+            timingStartsAtServerMs:
+                this.startAtServerMs + SELF_TIMED.COUNTDOWN_MS,
             serverTimeMs: now
         });
-        this.setTimer(() => this.beginPlaying(), SELF_TIMED.START_LEAD_MS);
+        this.setTimer(() => this.beginCountdown(), SELF_TIMED.START_LEAD_MS);
     }
 
     /**
@@ -311,9 +314,22 @@ export class SelfTimedRound<TRound, TResult> {
         this.scheduleStart();
     }
 
-    private beginPlaying(): void {
+    /**
+     * The round has started and the client is showing "3, 2, 1". Nothing is
+     * being timed yet, so the server does not start counting toward the
+     * result deadline until this has elapsed.
+     */
+    private beginCountdown(): void {
         if (this.phase !== 'starting' || this.round === null) return;
+        this.phase = 'countdown';
+        this.setTimer(() => this.beginPlaying(), SELF_TIMED.COUNTDOWN_MS);
+    }
+
+    private beginPlaying(): void {
+        if (this.phase !== 'countdown' || this.round === null) return;
         this.phase = 'playing';
+        // The game's timeout is measured from here, not from the round start,
+        // so it means what its name says: target + grace of actual timing.
         this.setTimer(() => this.resolve(), this.module.resultTimeoutMs(this.round));
     }
 

@@ -7,7 +7,7 @@
   "type": "commonjs",
   "main": "dist/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "tsx --test src/shared/games/*.spec.ts src/game/*.spec.ts",
     "build": "tsc",
     "dev": "tsx watch src/app.ts"
   },

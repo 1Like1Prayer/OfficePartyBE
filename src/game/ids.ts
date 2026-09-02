@@ -11,15 +11,12 @@ export const newPlayerId = (): string => randomUUID();
  * Room codes are short and spoken out loud, so the alphabet has no 0/O or
  * 1/I. `isTaken` lets the manager retry rather than risk a collision.
  */
-export const newRoomCode = (
-    isTaken: (code: string) => boolean,
-    rng: () => number = Math.random
-): string => {
+export const newRoomCode = (isTaken: (code: string) => boolean): string => {
     const { CODE_LENGTH, CODE_ALPHABET } = ROOM;
     for (let attempt = 0; attempt < 100; attempt++) {
         let code = '';
         for (let i = 0; i < CODE_LENGTH; i++) {
-            code += CODE_ALPHABET[Math.floor(rng() * CODE_ALPHABET.length)];
+            code += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
         }
         if (!isTaken(code)) return code;
     }

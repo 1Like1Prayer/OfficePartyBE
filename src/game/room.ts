@@ -2,9 +2,8 @@
  * A room: the players in it, who owns it, and the competition running inside
  * it (sections 5 and 6).
  *
- * The room emits through a RoomEmitter rather than touching Socket.IO, so the
- * whole lobby and competition flow can be driven in a test with a fake
- * emitter and a fake clock.
+ * The room emits through a RoomEmitter rather than touching Socket.IO, so
+ * nothing in here depends on the transport.
  */
 
 import { COMPETITION, ROOM } from '../shared/constants';
@@ -21,7 +20,7 @@ import type {
 } from '../shared/protocol';
 import { ServerEvent } from '../shared/protocol';
 import { buildCustomPlaylist, buildRandomPlaylist, Competition } from './competition';
-import { systemClock, type Clock, type TimerHandle } from './clock';
+import { monotonicNowMs } from './clock';
 import { newPlayerId, sanitizeName } from './ids';
 import { getSelfTimedModule } from './registry';
 import { SelfTimedRound, type AttemptResolved } from './selfTimedRound';
@@ -51,14 +50,12 @@ interface Player {
     disconnectedAt: number | null;
     /** Joined after the competition started; watches until the next lobby. */
     isSpectator: boolean;
-    dropTimer: TimerHandle | null;
+    dropTimer: NodeJS.Timeout | null;
 }
 
 export interface RoomOptions {
     roomCode: string;
     emitter: RoomEmitter;
-    clock?: Clock;
-    rng?: () => number;
     onEmpty?: (roomCode: string) => void;
 }
 
@@ -66,8 +63,6 @@ export class Room {
     readonly roomCode: string;
 
     private readonly emitter: RoomEmitter;
-    private readonly clock: Clock;
-    private readonly rng: () => number;
     private readonly onEmpty: ((roomCode: string) => void) | undefined;
 
     private readonly players = new Map<string, Player>();
@@ -82,7 +77,7 @@ export class Room {
     private round: SelfTimedRound<any, any> | null = null;
     private lastRoundView: RoundView | null = null;
 
-    private phaseTimer: TimerHandle | null = null;
+    private phaseTimer: NodeJS.Timeout | null = null;
     private destroyed = false;
     /** Monotonic time the last connected player left, for the manager's sweep. */
     private emptySinceMs: number | null = null;
@@ -90,10 +85,8 @@ export class Room {
     constructor(options: RoomOptions) {
         this.roomCode = options.roomCode;
         this.emitter = options.emitter;
-        this.clock = options.clock ?? systemClock;
-        this.rng = options.rng ?? Math.random;
         this.onEmpty = options.onEmpty;
-        this.emptySinceMs = this.clock.now();
+        this.emptySinceMs = monotonicNowMs();
     }
 
     /* ================================================================ */
@@ -116,8 +109,7 @@ export class Room {
             : undefined;
 
         if (existing) {
-            this.clock.clearTimeout(existing.dropTimer);
-            existing.dropTimer = null;
+            this.clearDropTimer(existing);
             const wasDisconnected = !existing.connected;
             existing.socketId = params.socketId;
             existing.connected = true;
@@ -155,7 +147,7 @@ export class Room {
             name: sanitizeName(params.name, `Player ${this.players.size + 1}`),
             socketId: params.socketId,
             connected: true,
-            joinedAt: this.clock.now(),
+            joinedAt: monotonicNowMs(),
             disconnectedAt: null,
             // Joining late is free in the lobby; once a competition is running
             // the newcomer watches until it returns to the lobby.
@@ -198,7 +190,7 @@ export class Room {
 
         player.connected = false;
         player.socketId = null;
-        player.disconnectedAt = this.clock.now();
+        player.disconnectedAt = monotonicNowMs();
 
         this.round?.dropParticipant(playerId);
         this.emitter.toRoom(ServerEvent.PlayerLeft, {
@@ -209,8 +201,8 @@ export class Room {
 
         if (this.ownerId === playerId) this.transferOwnership();
 
-        this.clock.clearTimeout(player.dropTimer);
-        player.dropTimer = this.clock.setTimeout(
+        this.clearDropTimer(player);
+        player.dropTimer = setTimeout(
             () => this.removePlayer(playerId),
             ROOM.DISCONNECT_GRACE_MS
         );
@@ -228,7 +220,7 @@ export class Room {
     private removePlayer(playerId: string): void {
         const player = this.players.get(playerId);
         if (!player) return;
-        this.clock.clearTimeout(player.dropTimer);
+        this.clearDropTimer(player);
         this.players.delete(playerId);
         this.round?.dropParticipant(playerId);
 
@@ -265,7 +257,7 @@ export class Room {
             this.emptySinceMs = null;
             return;
         }
-        if (this.emptySinceMs === null) this.emptySinceMs = this.clock.now();
+        if (this.emptySinceMs === null) this.emptySinceMs = monotonicNowMs();
         this.onEmpty?.(this.roomCode);
     }
 
@@ -322,7 +314,7 @@ export class Room {
         }
 
         const playlist =
-            this.mode === 'custom' ? this.customPlaylist : buildRandomPlaylist(this.rng);
+            this.mode === 'custom' ? this.customPlaylist : buildRandomPlaylist();
         if (playlist.length === 0) {
             return fail('invalid_playlist', 'No playable games are available.');
         }
@@ -403,8 +395,6 @@ export class Room {
             gameIndex: position.gameIndex,
             totalGames: position.totalGames,
             roundInGame: position.roundInGame,
-            clock: this.clock,
-            rng: this.rng,
             events: {
                 onRoundData: (payload) =>
                     this.emitter.toRoom(ServerEvent.RoundData, payload),
@@ -427,7 +417,7 @@ export class Room {
         if (payload.isFinal) this.competition.award(payload.winnerId);
 
         const nextRoundAtServerMs = payload.isFinal
-            ? this.clock.now() + COMPETITION.RESULT_DISPLAY_MS
+            ? monotonicNowMs() + COMPETITION.RESULT_DISPLAY_MS
             : null;
 
         this.emitter.toRoom(ServerEvent.RoundResults, {
@@ -604,7 +594,7 @@ export class Room {
                 : [...this.customPlaylist],
             catalog: GAME_IDS.map((id) => GAME_CATALOG[id]),
             round: this.roundView(),
-            serverTimeMs: this.clock.now(),
+            serverTimeMs: monotonicNowMs(),
             minPlayers: ROOM.MIN_PLAYERS,
             maxPlayers: ROOM.MAX_PLAYERS
         };
@@ -637,13 +627,6 @@ export class Room {
         this.emitter.toRoom(ServerEvent.RoomState, this.getState());
     }
 
-    sendStateTo(playerId: string): void {
-        const player = this.players.get(playerId);
-        if (player?.socketId) {
-            this.emitter.toSocket(player.socketId, ServerEvent.RoomState, this.getState());
-        }
-    }
-
     /**
      * A reconnecting client needs the round data it missed. It is already out
      * of the current attempt — the round stopped waiting on it when the socket
@@ -661,29 +644,26 @@ export class Room {
         return this.players.has(playerId);
     }
 
-    get isEmpty(): boolean {
-        return this.players.size === 0;
-    }
-
-    get currentPhase(): RoomPhase {
-        return this.phase;
-    }
-
     private activePlayers(): Player[] {
         return [...this.players.values()].filter((p) => p.connected && !p.isSpectator);
     }
 
     private setPhaseTimer(fn: () => void, delayMs: number): void {
         this.clearPhaseTimer();
-        this.phaseTimer = this.clock.setTimeout(() => {
+        this.phaseTimer = setTimeout(() => {
             this.phaseTimer = null;
             fn();
-        }, delayMs);
+        }, Math.max(0, delayMs));
     }
 
     private clearPhaseTimer(): void {
-        this.clock.clearTimeout(this.phaseTimer);
+        if (this.phaseTimer) clearTimeout(this.phaseTimer);
         this.phaseTimer = null;
+    }
+
+    private clearDropTimer(player: Player): void {
+        if (player.dropTimer) clearTimeout(player.dropTimer);
+        player.dropTimer = null;
     }
 
     destroy(): void {
@@ -691,10 +671,7 @@ export class Room {
         this.clearPhaseTimer();
         this.round?.cancel();
         this.round = null;
-        for (const player of this.players.values()) {
-            this.clock.clearTimeout(player.dropTimer);
-            player.dropTimer = null;
-        }
+        for (const player of this.players.values()) this.clearDropTimer(player);
         this.emitter.toRoom(ServerEvent.RoomClosed, { roomCode: this.roomCode });
         this.players.clear();
     }

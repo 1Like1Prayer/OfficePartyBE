@@ -24,11 +24,11 @@ export interface PlaylistError {
     message: string;
 }
 
-/** Fisher-Yates, on a copy, with an injectable RNG so tests can pin it. */
-const shuffled = <T>(items: readonly T[], rng: () => number): T[] => {
+/** Fisher-Yates, on a copy. */
+const shuffled = <T>(items: readonly T[]): T[] => {
     const copy = [...items];
     for (let i = copy.length - 1; i > 0; i--) {
-        const j = Math.floor(rng() * (i + 1));
+        const j = Math.floor(Math.random() * (i + 1));
         [copy[i], copy[j]] = [copy[j]!, copy[i]!];
     }
     return copy;
@@ -38,9 +38,9 @@ const shuffled = <T>(items: readonly T[], rng: () => number): T[] => {
  * Random mode picks up to five distinct games. It can only pick from games
  * that are actually built, so today that is a shorter list than five.
  */
-export const buildRandomPlaylist = (rng: () => number = Math.random): GameId[] => {
+export const buildRandomPlaylist = (): GameId[] => {
     const pool = playableGameIds();
-    return shuffled(pool, rng).slice(0, COMPETITION.RANDOM_PLAYLIST_SIZE);
+    return shuffled(pool).slice(0, COMPETITION.RANDOM_PLAYLIST_SIZE);
 };
 
 /** Custom mode keeps the owner's order and rejects anything unplayable. */

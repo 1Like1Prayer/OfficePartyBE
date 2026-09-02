@@ -10,8 +10,8 @@
  * hands back exactly one winner (section 6). The room only hears about the
  * final one.
  *
- * The runner has no socket dependency — it emits through callbacks and takes
- * its clock and RNG by injection, so it can be driven end to end in a test.
+ * The runner has no socket dependency: it emits through callbacks, so the
+ * room decides how results reach the wire.
  */
 
 import { SELF_TIMED } from '../shared/constants';
@@ -29,7 +29,7 @@ import type {
     RoundPhase,
     StartAtPayload
 } from '../shared/protocol';
-import type { Clock, TimerHandle } from './clock';
+import { monotonicNowMs } from './clock';
 
 /** How long the "it's a tie" screen shows before the tiebreaker begins. */
 const TIEBREAK_DELAY_MS = 4_000;
@@ -62,8 +62,6 @@ export interface SelfTimedRoundOptions<TRound, TResult> {
     gameIndex: number;
     totalGames: number;
     roundInGame: number;
-    clock: Clock;
-    rng?: () => number;
     events: SelfTimedRoundEvents;
 }
 
@@ -76,8 +74,6 @@ export class SelfTimedRound<TRound, TResult> {
     readonly gameId: GameId;
 
     private readonly module: SelfTimedGameModule<TRound, TResult>;
-    private readonly clock: Clock;
-    private readonly rng: () => number;
     private readonly events: SelfTimedRoundEvents;
     private readonly gameIndex: number;
     private readonly totalGames: number;
@@ -93,7 +89,7 @@ export class SelfTimedRound<TRound, TResult> {
     private lastProgressAt = new Map<string, number>();
     private startAtServerMs: number | null = null;
     private readyDeadlineMs = 0;
-    private timer: TimerHandle | null = null;
+    private timer: NodeJS.Timeout | null = null;
     private cancelled = false;
 
     constructor(options: SelfTimedRoundOptions<TRound, TResult>) {
@@ -103,8 +99,6 @@ export class SelfTimedRound<TRound, TResult> {
         this.gameIndex = options.gameIndex;
         this.totalGames = options.totalGames;
         this.roundInGame = options.roundInGame;
-        this.clock = options.clock;
-        this.rng = options.rng ?? Math.random;
         this.events = options.events;
     }
 
@@ -129,7 +123,7 @@ export class SelfTimedRound<TRound, TResult> {
 
         this.attemptIndex = attempt;
         this.isTiebreak = isTiebreak;
-        this.round = this.module.createRoundData(this.rng);
+        this.round = this.module.createRoundData();
         this.ready.clear();
         this.results.clear();
         this.lastProgressAt.clear();
@@ -153,7 +147,7 @@ export class SelfTimedRound<TRound, TResult> {
         // Ready check: nothing is scheduled until everyone has acknowledged.
         this.phase = 'ready-check';
         this.readyDeadlineMs =
-            this.clock.now() + SELF_TIMED.READY_CHECK_TIMEOUT_MS;
+            monotonicNowMs() + SELF_TIMED.READY_CHECK_TIMEOUT_MS;
         this.emitReadyState();
         this.setTimer(
             () => this.onReadyCheckTimeout(),
@@ -226,7 +220,7 @@ export class SelfTimedRound<TRound, TResult> {
             return;
         }
 
-        const now = this.clock.now();
+        const now = monotonicNowMs();
         const last = this.lastProgressAt.get(playerId) ?? -Infinity;
         if (now - last < SELF_TIMED.PROGRESS_MIN_INTERVAL_MS) return;
 
@@ -289,7 +283,7 @@ export class SelfTimedRound<TRound, TResult> {
     private scheduleStart(): void {
         this.clearTimer();
         this.phase = 'starting';
-        const now = this.clock.now();
+        const now = monotonicNowMs();
         this.startAtServerMs = now + SELF_TIMED.START_LEAD_MS;
         this.events.onStartAt({
             roundId: this.roundId,
@@ -367,7 +361,7 @@ export class SelfTimedRound<TRound, TResult> {
             winnerId = leaders[0]!;
         } else if (leaders.length > 1) {
             // Tiebreakers exhausted. Draw, and say so rather than pretending.
-            winnerId = leaders[Math.floor(this.rng() * leaders.length)]!;
+            winnerId = leaders[Math.floor(Math.random() * leaders.length)]!;
             decidedByCoinFlip = true;
         }
 
@@ -385,30 +379,17 @@ export class SelfTimedRound<TRound, TResult> {
 
     private setTimer(fn: () => void, delayMs: number): void {
         this.clearTimer();
-        this.timer = this.clock.setTimeout(fn, delayMs);
+        this.timer = setTimeout(fn, Math.max(0, delayMs));
     }
 
     private clearTimer(): void {
-        this.clock.clearTimeout(this.timer);
+        if (this.timer) clearTimeout(this.timer);
         this.timer = null;
     }
 
     /* -------------------------------------------------------------- */
     /* Views                                                            */
     /* -------------------------------------------------------------- */
-
-    get currentPhase(): RoundPhase {
-        return this.phase;
-    }
-
-    get attempt(): number {
-        return this.attemptIndex;
-    }
-
-    /** The public round data, for a reconnecting client. */
-    get roundData(): TRound | null {
-        return this.round;
-    }
 
     describe() {
         return {

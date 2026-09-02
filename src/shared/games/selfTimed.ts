@@ -28,7 +28,7 @@ export interface SelfTimedGameModule<TRound, TResult> {
     readonly kind: 'self-timed';
 
     /** Public round data. Must contain nothing a player shouldn't see. */
-    createRoundData(rng: () => number): TRound;
+    createRoundData(): TRound;
 
     /** Parse an untrusted client result. Returns null for anything malformed. */
     parseResult(raw: unknown, round: TRound): TResult | null;

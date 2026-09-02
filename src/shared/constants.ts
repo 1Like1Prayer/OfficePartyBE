@@ -13,7 +13,7 @@ export const ROOM = {
     CODE_LENGTH: 4,
     CODE_ALPHABET: 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789',
     MIN_PLAYERS: 2,
-    MAX_PLAYERS: 8,
+    MAX_PLAYERS: 12,
     /** Name length bound, so a runaway client cannot post a novel. */
     MAX_NAME_LENGTH: 24,
     /** A disconnected player keeps their slot this long before being dropped. */

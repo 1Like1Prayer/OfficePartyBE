@@ -6,7 +6,7 @@
  * measures anything, which is why 300 ms of latency cannot change who wins.
  *
  * Everything here is a plain function over plain data: no sockets, no clock,
- * no I/O. That is what makes it directly testable.
+ * no I/O.
  */
 
 import type {
@@ -49,10 +49,10 @@ export interface StopTheClockResult {
 }
 
 /** Pick a target on a 10 ms grid inside the allowed band. */
-export const pickTargetMs = (rng: () => number = Math.random): number => {
+export const pickTargetMs = (): number => {
     const { MIN_TARGET_MS, MAX_TARGET_MS, TARGET_STEP_MS } = STOP_THE_CLOCK;
     const steps = (MAX_TARGET_MS - MIN_TARGET_MS) / TARGET_STEP_MS;
-    return MIN_TARGET_MS + Math.floor(rng() * (steps + 1)) * TARGET_STEP_MS;
+    return MIN_TARGET_MS + Math.floor(Math.random() * (steps + 1)) * TARGET_STEP_MS;
 };
 
 /** How far off a report is. Integer milliseconds, so ties are exact. */
@@ -134,7 +134,7 @@ export const stopTheClockModule: SelfTimedGameModule<
     id: 'stop-the-clock',
     title: 'Stop the Clock',
     kind: 'self-timed',
-    createRoundData: (rng) => ({ targetMs: pickTargetMs(rng) }),
+    createRoundData: () => ({ targetMs: pickTargetMs() }),
     parseResult,
     parseProgress,
     resultTimeoutMs,

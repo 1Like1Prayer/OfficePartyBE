@@ -3,7 +3,7 @@
  *
  * This file is deliberately thin: it validates untrusted input, resolves the
  * socket to a (room, player) pair, and calls into the Room. All the rules
- * live in game/ and shared/, where they can be tested without a socket.
+ * live in game/ and shared/.
  *
  * Per section 13, everything here is bookkeeping rather than enforcement:
  * malformed messages are logged and ignored instead of thrown.

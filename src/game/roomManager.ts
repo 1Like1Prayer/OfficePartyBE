@@ -6,25 +6,19 @@
 
 import { ROOM } from '../shared/constants';
 import logger from '../logger/logger';
-import { monotonicNowMs, systemClock, type Clock } from './clock';
+import { monotonicNowMs } from './clock';
 import { newRoomCode, normalizeRoomCode } from './ids';
 import { Room, type RoomEmitter } from './room';
 
 export class RoomManager {
     private readonly rooms = new Map<string, Room>();
-    private readonly clock: Clock;
     private sweepTimer: NodeJS.Timeout | null = null;
-
-    constructor(clock: Clock = systemClock) {
-        this.clock = clock;
-    }
 
     createRoom(emitterFor: (roomCode: string) => RoomEmitter): Room {
         const roomCode = newRoomCode((code) => this.rooms.has(code));
         const room = new Room({
             roomCode,
-            emitter: emitterFor(roomCode),
-            clock: this.clock
+            emitter: emitterFor(roomCode)
         });
         this.rooms.set(roomCode, room);
         logger.info(`room ${roomCode} created (${this.rooms.size} live)`);

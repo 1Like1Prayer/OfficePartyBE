@@ -1,8 +1,8 @@
 /**
  * Stop the Clock — rules only.
  *
- * Hit a target between 2.00 and 8.00 seconds. The client times itself with
- * performance.now() and reports integer milliseconds; the server never
+ * Hit a whole-second target between 2 and 8 seconds. The client times itself
+ * with performance.now() and reports integer milliseconds; the server never
  * measures anything, which is why 300 ms of latency cannot change who wins.
  *
  * Everything here is a plain function over plain data: no sockets, no clock,
@@ -18,8 +18,8 @@ import type {
 export const STOP_THE_CLOCK = {
     MIN_TARGET_MS: 2_000,
     MAX_TARGET_MS: 8_000,
-    /** Targets land on 10 ms boundaries so they read cleanly as "4.37 s". */
-    TARGET_STEP_MS: 10,
+    /** Targets land on whole seconds so they read cleanly as "4 s". */
+    TARGET_STEP_MS: 1_000,
     /**
      * A stopped clock is nonsense past this point; anything longer is a stuck
      * tab or a fabricated number and is rejected rather than scored.
@@ -49,7 +49,7 @@ export interface StopTheClockResult {
     timingSuspect: boolean;
 }
 
-/** Pick a target on a 10 ms grid inside the allowed band. */
+/** Pick a whole-second target inside the allowed band. */
 export const pickTargetMs = (): number => {
     const { MIN_TARGET_MS, MAX_TARGET_MS, TARGET_STEP_MS } = STOP_THE_CLOCK;
     const steps = (MAX_TARGET_MS - MIN_TARGET_MS) / TARGET_STEP_MS;

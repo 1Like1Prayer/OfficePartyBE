@@ -110,6 +110,8 @@ export type PlaylistMode = 'random' | 'custom';
 export interface PlayerView {
     playerId: string;
     name: string;
+    /** Avatar seed the player picked. See AVATAR in constants. */
+    avatar: string;
     connected: boolean;
     isOwner: boolean;
     /** Joined after the competition started, so they watch rather than play. */

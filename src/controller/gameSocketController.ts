@@ -12,7 +12,7 @@
 import type { Namespace, Socket } from 'socket.io';
 import { z } from 'zod';
 import logger from '../logger/logger';
-import { COMPETITION, PROTOCOL_VERSION, ROOM } from '../shared/constants';
+import { AVATAR, COMPETITION, PROTOCOL_VERSION, ROOM } from '../shared/constants';
 import { GAME_IDS } from '../shared/games/catalog';
 import {
     ClientEvent,
@@ -34,10 +34,17 @@ const playerIdSchema = z.string().uuid().optional();
 const roomCodeSchema = z.string().min(1).max(16);
 const gameIdSchema = z.enum(GAME_IDS);
 
-const createSchema = z.object({ name: nameSchema }).default({});
+/**
+ * Deliberately lenient: an avatar is cosmetic, so a bad one must never stop
+ * someone getting into the room. The bound is only there to refuse absurd
+ * payloads; `sanitizeAvatar` is what decides whether the seed is usable.
+ */
+const avatarSchema = z.string().max(AVATAR.MAX_PAYLOAD_LENGTH).optional();
+const createSchema = z.object({ name: nameSchema, avatar: avatarSchema }).default({});
 const joinSchema = z.object({
     roomCode: roomCodeSchema,
     name: nameSchema,
+    avatar: avatarSchema,
     playerId: playerIdSchema
 });
 const setNameSchema = z.object({ name: z.string().max(ROOM.MAX_NAME_LENGTH * 4) });
@@ -158,7 +165,8 @@ export const registerGameNamespace = (namespace: Namespace): void => {
             socket.join(room.roomCode);
             const result = room.join({
                 socketId: socket.id,
-                name: parsed.data.name
+                name: parsed.data.name,
+                avatar: parsed.data.avatar
             });
             if (result.ok) {
                 session.roomCode = room.roomCode;
@@ -182,6 +190,7 @@ export const registerGameNamespace = (namespace: Namespace): void => {
             const result = room.join({
                 socketId: socket.id,
                 name: parsed.data.name,
+                avatar: parsed.data.avatar,
                 playerId: parsed.data.playerId
             });
             if (result.ok) {

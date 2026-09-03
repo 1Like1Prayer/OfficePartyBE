@@ -24,7 +24,7 @@ import { ServerEvent } from '../shared/protocol';
 import { buildCustomPlaylist, buildRandomPlaylist, Competition } from './competition';
 import { playableGameIds } from './registry';
 import { monotonicNowMs } from './clock';
-import { newPlayerId, sanitizeName } from './ids';
+import { newPlayerId, sanitizeAvatar, sanitizeName } from './ids';
 import { getSelfTimedModule } from './registry';
 import { SelfTimedRound, type AttemptResolved } from './selfTimedRound';
 
@@ -46,6 +46,8 @@ const fail = (code: ErrorCode, message: string): RoomResult<never> => ({
 interface Player {
     playerId: string;
     name: string;
+    /** Avatar seed the player picked; the client draws from it. */
+    avatar: string;
     socketId: string | null;
     connected: boolean;
     /** Monotonic time of first join. Decides owner succession. */
@@ -106,6 +108,7 @@ export class Room {
     join(params: {
         socketId: string;
         name: unknown;
+        avatar?: unknown;
         playerId?: string | undefined;
     }): RoomResult<JoinAckData> {
         if (this.destroyed) return fail('room_not_found', 'That room is gone.');
@@ -121,6 +124,7 @@ export class Room {
             existing.connected = true;
             existing.disconnectedAt = null;
             existing.name = sanitizeName(params.name, existing.name);
+            existing.avatar = sanitizeAvatar(params.avatar, existing.avatar);
             this.emptySinceMs = null;
             if (this.ownerId === null) this.claimOwnership(existing.playerId);
 
@@ -151,6 +155,8 @@ export class Room {
         const player: Player = {
             playerId,
             name: sanitizeName(params.name, `Player ${this.players.size + 1}`),
+            // The id is a fine fallback seed: stable, and unique per player.
+            avatar: sanitizeAvatar(params.avatar, playerId),
             socketId: params.socketId,
             connected: true,
             joinedAt: monotonicNowMs(),
@@ -645,6 +651,7 @@ export class Room {
             .map((player) => ({
                 playerId: player.playerId,
                 name: player.name,
+                avatar: player.avatar,
                 connected: player.connected,
                 isOwner: player.playerId === this.ownerId,
                 isSpectator: player.isSpectator,

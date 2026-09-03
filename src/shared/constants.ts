@@ -6,7 +6,23 @@
  */
 
 /** Bumped whenever a message shape changes. Mismatched clients are asked to reload. */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
+
+/**
+ * Avatars are chosen by the player and drawn from a seed, never a URL. The
+ * client turns the seed into an image; the server only ever stores an opaque
+ * token, so nobody can make the rest of the room fetch an address they picked.
+ */
+export const AVATAR = {
+    /** Seeds are compared and stored as-is, so keep the alphabet boring. */
+    SEED_PATTERN: /^[A-Za-z0-9_-]{1,32}$/,
+    /**
+     * Only a guard against absurd payloads. Anything longer than a seed is
+     * still rejected by SEED_PATTERN and replaced, rather than refusing the
+     * join over a picture.
+     */
+    MAX_PAYLOAD_LENGTH: 256
+} as const;
 
 export const ROOM = {
     /** Room codes are 4 characters from an unambiguous alphabet. */

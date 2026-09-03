@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ROOM } from '../shared/constants';
+import { AVATAR, ROOM } from '../shared/constants';
 
 /**
  * A playerId survives reconnection. socket.id changes every reconnect, so it
@@ -32,3 +32,11 @@ export const sanitizeName = (raw: unknown, fallback: string): string => {
     const cleaned = raw.replace(/\s+/g, ' ').trim().slice(0, ROOM.MAX_NAME_LENGTH);
     return cleaned.length > 0 ? cleaned : fallback;
 };
+
+/**
+ * An avatar seed is shown to everyone in the room, so it is validated rather
+ * than trusted: anything that is not a plain token falls back to the player's
+ * own id, which always renders something.
+ */
+export const sanitizeAvatar = (raw: unknown, fallback: string): string =>
+    typeof raw === 'string' && AVATAR.SEED_PATTERN.test(raw) ? raw : fallback;

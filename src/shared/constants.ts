@@ -44,8 +44,12 @@ export const SELF_TIMED = {
     /**
      * How far ahead a start is scheduled once everyone is ready. Long enough to
      * absorb normal latency, short enough not to feel like a stall.
+     *
+     * It is also the client's window to build up to the round before the
+     * countdown — Stop the Clock spins its target through it — so this is the
+     * knob for how long that reveal lasts.
      */
-    START_LEAD_MS: 2_000,
+    START_LEAD_MS: 3_000,
     /**
      * If someone never acknowledges the ready check we start without them
      * rather than hanging the room.

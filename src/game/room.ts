@@ -465,6 +465,7 @@ export class Room {
             gameIndex: position.gameIndex,
             totalGames: position.totalGames,
             roundInGame: position.roundInGame,
+            roundsPerGame: this.competition.roundsPerGame,
             events: {
                 onRoundData: (payload) =>
                     this.emitter.toRoom(ServerEvent.RoundData, payload),

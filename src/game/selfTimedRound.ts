@@ -62,6 +62,7 @@ export interface SelfTimedRoundOptions<TRound, TResult> {
     gameIndex: number;
     totalGames: number;
     roundInGame: number;
+    roundsPerGame: number;
     events: SelfTimedRoundEvents;
 }
 
@@ -78,6 +79,7 @@ export class SelfTimedRound<TRound, TResult> {
     private readonly gameIndex: number;
     private readonly totalGames: number;
     private readonly roundInGame: number;
+    private readonly roundsPerGame: number;
 
     private phase: RoundPhase = 'idle';
     private attemptIndex = 0;
@@ -99,6 +101,7 @@ export class SelfTimedRound<TRound, TResult> {
         this.gameIndex = options.gameIndex;
         this.totalGames = options.totalGames;
         this.roundInGame = options.roundInGame;
+        this.roundsPerGame = options.roundsPerGame;
         this.events = options.events;
     }
 
@@ -123,7 +126,12 @@ export class SelfTimedRound<TRound, TResult> {
 
         this.attemptIndex = attempt;
         this.isTiebreak = isTiebreak;
-        this.round = this.module.createRoundData();
+        // Tiebreakers reuse the same context, so a tied blind round stays blind
+        // and gets a fresh target.
+        this.round = this.module.createRoundData({
+            roundInGame: this.roundInGame,
+            roundsPerGame: this.roundsPerGame
+        });
         this.ready.clear();
         this.results.clear();
         this.lastProgressAt.clear();

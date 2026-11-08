@@ -22,13 +22,19 @@ export interface RankedEntry {
     detail: Record<string, number | string | boolean>;
 }
 
+export interface RoundContext {
+    /** 1-based round within the game. */
+    roundInGame: number;
+    roundsPerGame: number;
+}
+
 export interface SelfTimedGameModule<TRound, TResult> {
     readonly id: string;
     readonly title: string;
     readonly kind: 'self-timed';
 
     /** Public round data. Must contain nothing a player shouldn't see. */
-    createRoundData(): TRound;
+    createRoundData(context: RoundContext): TRound;
 
     /** Parse an untrusted client result. Returns null for anything malformed. */
     parseResult(raw: unknown, round: TRound): TResult | null;

@@ -11,6 +11,7 @@
 
 import type {
     RankedEntry,
+    RoundContext,
     ResultEntry,
     SelfTimedGameModule
 } from './selfTimed';
@@ -30,12 +31,16 @@ export const STOP_THE_CLOCK = {
      * If someone never reports, the round closes at target + 4 s and is scored
      * from whatever arrived.
      */
-    RESULT_GRACE_MS: 4_000
+    RESULT_GRACE_MS: 4_000,
+    /** Blind rounds draw from a narrower, longer band so the gap is worth guessing. */
+    BLIND_MIN_TARGET_MS: 4_000
 } as const;
 
 export interface StopTheClockRound {
     /** Milliseconds the player is trying to hit. */
     targetMs: number;
+    /** The clock fades out mid-round. Public: it reveals nothing about results. */
+    blind: boolean;
 }
 
 export interface StopTheClockResult {
@@ -49,11 +54,26 @@ export interface StopTheClockResult {
     timingSuspect: boolean;
 }
 
-/** Pick a whole-second target inside the allowed band. */
-export const pickTargetMs = (): number => {
-    const { MIN_TARGET_MS, MAX_TARGET_MS, TARGET_STEP_MS } = STOP_THE_CLOCK;
-    const steps = (MAX_TARGET_MS - MIN_TARGET_MS) / TARGET_STEP_MS;
-    return MIN_TARGET_MS + Math.floor(Math.random() * (steps + 1)) * TARGET_STEP_MS;
+/**
+ * Blind in the last two rounds of a game (the last one when a game has fewer
+ * than five rounds): 2 rounds -> 2, 3 rounds -> 3, 5 rounds -> 4 and 5.
+ */
+export const isBlindRound = ({ roundInGame, roundsPerGame }: RoundContext): boolean =>
+    roundInGame > roundsPerGame - (roundsPerGame >= 5 ? 2 : 1);
+
+/** Pick a whole-second target between minMs and the maximum. */
+export const pickTargetMs = (minMs: number = STOP_THE_CLOCK.MIN_TARGET_MS): number => {
+    const { MAX_TARGET_MS, TARGET_STEP_MS } = STOP_THE_CLOCK;
+    const steps = Math.floor((MAX_TARGET_MS - minMs) / TARGET_STEP_MS);
+    return minMs + Math.floor(Math.random() * (steps + 1)) * TARGET_STEP_MS;
+};
+
+export const createRoundData = (context: RoundContext): StopTheClockRound => {
+    const blind = isBlindRound(context);
+    return {
+        targetMs: pickTargetMs(blind ? STOP_THE_CLOCK.BLIND_MIN_TARGET_MS : undefined),
+        blind
+    };
 };
 
 /** How far off a report is. Integer milliseconds, so ties are exact. */
@@ -135,7 +155,7 @@ export const stopTheClockModule: SelfTimedGameModule<
     id: 'stop-the-clock',
     title: 'Stop the Clock',
     kind: 'self-timed',
-    createRoundData: () => ({ targetMs: pickTargetMs() }),
+    createRoundData,
     parseResult,
     parseProgress,
     resultTimeoutMs,

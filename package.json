@@ -7,7 +7,8 @@
   "type": "commonjs",
   "main": "dist/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "tsx --test src/**/*.test.ts",
+    "typecheck": "tsc --noEmit",
     "build": "tsc",
     "dev": "tsx watch src/app.ts"
   },

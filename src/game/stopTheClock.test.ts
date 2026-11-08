@@ -17,21 +17,17 @@ const blindRounds = (roundsPerGame: number): number[] =>
         isBlindRound({ roundInGame, roundsPerGame })
     );
 
-test('isBlindRound: 2 rounds -> round 2', () => {
-    assert.deepEqual(blindRounds(2), [2]);
+test('Stop the Clock is played for 4 rounds', () => {
+    assert.equal(stopTheClockModule.roundsPerGame, 4);
 });
 
-test('isBlindRound: 3 rounds -> round 3', () => {
-    assert.deepEqual(blindRounds(3), [3]);
-});
-
-test('isBlindRound: 5 rounds -> rounds 4 and 5', () => {
-    assert.deepEqual(blindRounds(5), [4, 5]);
+test('isBlindRound: 4 rounds -> rounds 1-2 normal, rounds 3-4 faded', () => {
+    assert.deepEqual(blindRounds(STOP_THE_CLOCK.ROUNDS_PER_GAME), [3, 4]);
 });
 
 test('blind rounds target 4-8s in whole seconds', () => {
     for (let i = 0; i < 2000; i++) {
-        const round = createRoundData({ roundInGame: 5, roundsPerGame: 5 });
+        const round = createRoundData({ roundInGame: 4, roundsPerGame: 4 });
         assert.equal(round.blind, true);
         assert.ok(round.targetMs >= 4_000 && round.targetMs <= 8_000);
         assert.equal(round.targetMs % 1_000, 0);
@@ -41,7 +37,7 @@ test('blind rounds target 4-8s in whole seconds', () => {
 test('non-blind rounds target 2-8s in whole seconds', () => {
     const seen = new Set<number>();
     for (let i = 0; i < 2000; i++) {
-        const round = createRoundData({ roundInGame: 1, roundsPerGame: 5 });
+        const round = createRoundData({ roundInGame: 1, roundsPerGame: 4 });
         assert.equal(round.blind, false);
         assert.ok(round.targetMs >= 2_000 && round.targetMs <= 8_000);
         assert.equal(round.targetMs % 1_000, 0);
@@ -91,8 +87,8 @@ const startRound = (roundInGame: number, roundsPerGame: number) => {
 };
 
 test('round:data carries blind and targetMs', () => {
-    const blind = startRound(5, 5);
-    const normal = startRound(1, 5);
+    const blind = startRound(4, 4);
+    const normal = startRound(1, 4);
     try {
         const b = blind.payloads[0]!.data as StopTheClockRound;
         const n = normal.payloads[0]!.data as StopTheClockRound;
@@ -107,7 +103,7 @@ test('round:data carries blind and targetMs', () => {
 });
 
 test('reconnect snapshot keeps blind and the same target', () => {
-    const { round, payloads } = startRound(5, 5);
+    const { round, payloads } = startRound(4, 4);
     try {
         const snap = round.snapshotRoundData();
         assert.deepEqual(snap?.data, payloads[0]!.data);

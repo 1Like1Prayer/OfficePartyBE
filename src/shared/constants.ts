@@ -6,7 +6,7 @@
  */
 
 /** Bumped whenever a message shape changes. Mismatched clients are asked to reload. */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 6;
 
 /**
  * Avatars are chosen by the player and drawn from a seed, never a URL. The
@@ -41,12 +41,11 @@ export const ROOM = {
 } as const;
 
 export const COMPETITION = {
-    /**
-     * How many times each selected game is played. Each play is a scoring
-     * round worth one point. The owner picks from ROUNDS_PER_GAME_OPTIONS.
+    /*
+     * How many scoring rounds a game gets is the game's own business: each
+     * game module declares `roundsPerGame` (Stop the Clock 4, Cube Counter 1).
+     * Each scoring round is worth one point.
      */
-    DEFAULT_ROUNDS_PER_GAME: 2,
-    ROUNDS_PER_GAME_OPTIONS: [2, 3, 5] as const,
     /** How many games random mode picks (capped by how many are implemented). */
     RANDOM_PLAYLIST_SIZE: 5,
     MAX_CUSTOM_PLAYLIST_SIZE: 10,

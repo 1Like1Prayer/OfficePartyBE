@@ -6,7 +6,7 @@
 
 export const GAME_IDS = [
     'minefield',
-    'chisel-gauntlet',
+    'cube-counter',
     'crusher-escalator',
     'safe-tile-arena',
     'pea-dinner',
@@ -31,7 +31,7 @@ export interface GameMeta {
 
 export const GAME_CATALOG: Record<GameId, GameMeta> = {
     'minefield': { id: 'minefield', title: 'Minefield', kind: 'shared-world', implemented: false },
-    'chisel-gauntlet': { id: 'chisel-gauntlet', title: 'Chisel Gauntlet', kind: 'self-timed', implemented: false },
+    'cube-counter': { id: 'cube-counter', title: 'Cube Counter', kind: 'self-timed', implemented: true },
     'crusher-escalator': { id: 'crusher-escalator', title: 'Crusher Escalator', kind: 'self-timed', implemented: false },
     'safe-tile-arena': { id: 'safe-tile-arena', title: 'Safe Tile Arena', kind: 'shared-world', implemented: false },
     'pea-dinner': { id: 'pea-dinner', title: 'Pea Dinner', kind: 'self-timed', implemented: false },

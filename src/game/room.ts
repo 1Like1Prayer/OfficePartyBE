@@ -17,12 +17,13 @@ import type {
     PlaylistMode,
     RoomPhase,
     RoomStatePayload,
+    RoundsByGame,
     RoundView,
     StartBlockedReason
 } from '../shared/protocol';
 import { ServerEvent } from '../shared/protocol';
 import { buildCustomPlaylist, buildRandomPlaylist, Competition } from './competition';
-import { playableGameIds } from './registry';
+import { playableGameIds, roundsForGame } from './registry';
 import { monotonicNowMs } from './clock';
 import { newPlayerId, sanitizeAvatar, sanitizeName } from './ids';
 import { getSelfTimedModule } from './registry';
@@ -36,6 +37,10 @@ export interface RoomEmitter {
 export type RoomResult<T> =
     | { ok: true; data: T }
     | { ok: false; code: ErrorCode; message: string };
+
+/** Scoring rounds for every game a playlist may contain right now. */
+const roundsByPlayableGame = (): RoundsByGame =>
+    Object.fromEntries(playableGameIds().map((id) => [id, roundsForGame(id)]));
 
 const fail = (code: ErrorCode, message: string): RoomResult<never> => ({
     ok: false,
@@ -78,7 +83,6 @@ export class Room {
 
     private mode: PlaylistMode = 'random';
     private customPlaylist: GameId[] = [];
-    private roundsPerGame: number = COMPETITION.DEFAULT_ROUNDS_PER_GAME;
 
     private competition: Competition | null = null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -341,26 +345,6 @@ export class Room {
         return { ok: true, data: { ready: player.ready } };
     }
 
-    /** How many scoring rounds each chosen game gets. Owner only. */
-    setRoundsPerGame(
-        playerId: string,
-        roundsPerGame: number
-    ): RoomResult<{ roundsPerGame: number }> {
-        const guard = this.requireOwnerInLobby(playerId);
-        if (guard) return guard;
-
-        const options: readonly number[] = COMPETITION.ROUNDS_PER_GAME_OPTIONS;
-        if (!options.includes(roundsPerGame)) {
-            return fail(
-                'invalid_rounds',
-                `Rounds per game must be one of ${options.join(', ')}.`
-            );
-        }
-        this.roundsPerGame = roundsPerGame;
-        this.broadcastState();
-        return { ok: true, data: { roundsPerGame } };
-    }
-
     startCompetition(playerId: string): RoomResult<{ playlist: GameId[] }> {
         const guard = this.requireOwnerInLobby(playerId);
         if (guard) return guard;
@@ -391,7 +375,6 @@ export class Room {
         this.competition = new Competition({
             mode: this.mode,
             playlist,
-            roundsPerGame: this.roundsPerGame,
             players: active.map((p) => p.playerId)
         });
         this.phase = 'competition';
@@ -454,7 +437,8 @@ export class Room {
             title: GAME_CATALOG[position.gameId].title,
             gameIndex: position.gameIndex,
             totalGames: position.totalGames,
-            roundInGame: position.roundInGame
+            roundInGame: position.roundInGame,
+            roundsPerGame: position.roundsPerGame
         };
         this.emitter.toRoom(ServerEvent.GameStarting, starting);
 
@@ -465,7 +449,7 @@ export class Room {
             gameIndex: position.gameIndex,
             totalGames: position.totalGames,
             roundInGame: position.roundInGame,
-            roundsPerGame: this.competition.roundsPerGame,
+            roundsPerGame: position.roundsPerGame,
             events: {
                 onRoundData: (payload) =>
                     this.emitter.toRoom(ServerEvent.RoundData, payload),
@@ -511,9 +495,7 @@ export class Room {
         });
 
         const described = this.round?.describe();
-        this.lastRoundView = described
-            ? { ...described, roundsPerGame: this.roundsPerGame }
-            : null;
+        this.lastRoundView = described ?? null;
         this.setPhaseTimer(
             () => this.advanceRound(),
             COMPETITION.RESULT_DISPLAY_MS
@@ -703,8 +685,7 @@ export class Room {
             allReady,
             canStart: this.phase === 'lobby' && blockedReason === null,
             blockedReason,
-            roundsPerGame: this.roundsPerGame,
-            roundsPerGameOptions: [...COMPETITION.ROUNDS_PER_GAME_OPTIONS],
+            roundsByGame: roundsByPlayableGame(),
             playableGames: playableGameIds()
         };
     }
@@ -720,7 +701,7 @@ export class Room {
                 gameIndex: 0,
                 totalGames: this.competition?.playlist.length ?? 0,
                 roundInGame: 0,
-                roundsPerGame: this.roundsPerGame,
+                roundsPerGame: 0,
                 isTiebreak: false,
                 participants: [],
                 ready: [],
@@ -728,7 +709,7 @@ export class Room {
                 startAtServerMs: null
             };
         }
-        return { ...described, roundsPerGame: this.roundsPerGame };
+        return described;
     }
 
     broadcastState(): void {

@@ -23,7 +23,6 @@ export const ClientEvent = {
     SetName: 'room:setName',
     RequestState: 'room:requestState',
     SetMode: 'lobby:setMode',
-    SetRounds: 'lobby:setRounds',
     SetReady: 'lobby:ready',
     StartCompetition: 'lobby:start',
     SkipResults: 'competition:skip',
@@ -74,7 +73,6 @@ export type ErrorCode =
     | 'not_enough_players'
     | 'players_not_ready'
     | 'invalid_playlist'
-    | 'invalid_rounds'
     | 'invalid_payload'
     | 'wrong_phase'
     | 'stale_round'
@@ -138,12 +136,14 @@ export interface LobbyView {
     canStart: boolean;
     /** Why start is unavailable, or null when it is. */
     blockedReason: StartBlockedReason | null;
-    roundsPerGame: number;
-    /** The values roundsPerGame may be set to. */
-    roundsPerGameOptions: number[];
+    /** How many scoring rounds each playable game is played for. */
+    roundsByGame: RoundsByGame;
     /** The set list the owner picks from — games that are actually built. */
     playableGames: GameId[];
 }
+
+/** Scoring rounds per game. Each game decides its own count. */
+export type RoundsByGame = Partial<Record<GameId, number>>;
 
 export type StartBlockedReason =
     | 'not_enough_players'
@@ -270,7 +270,8 @@ export interface LeaderboardRow extends ScoreRow {
 export interface PlaylistPayload {
     mode: PlaylistMode;
     playlist: GameId[];
-    roundsPerGame: number;
+    /** Scoring rounds for each game in the playlist. */
+    roundsByGame: RoundsByGame;
     totalRounds: number;
 }
 
@@ -280,6 +281,8 @@ export interface GameStartingPayload extends RoundEnvelope {
     gameIndex: number;
     totalGames: number;
     roundInGame: number;
+    /** How many scoring rounds this game has in total. */
+    roundsPerGame: number;
 }
 
 export interface LeaderboardPayload {

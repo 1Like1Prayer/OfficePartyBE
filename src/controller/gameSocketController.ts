@@ -52,9 +52,6 @@ const setModeSchema = z.object({
     mode: z.enum(['random', 'custom']),
     gameIds: z.array(gameIdSchema).max(10).optional()
 });
-const setRoundsSchema = z.object({
-    roundsPerGame: z.number().int()
-});
 const setReadySchema = z.object({ ready: z.boolean() });
 const roundEnvelopeSchema = z.object({
     roundId: z.number().int().nonnegative(),
@@ -246,34 +243,6 @@ export const registerGameNamespace = (namespace: Namespace): void => {
                         membership.playerId,
                         parsed.data.mode,
                         parsed.data.gameIds
-                    )
-                )
-            );
-        });
-
-        handle(ClientEvent.SetRounds, (payload, ack) => {
-            const membership = requireMembership();
-            if ('ok' in membership) {
-                respond(ack, membership);
-                return;
-            }
-            const parsed = setRoundsSchema.safeParse(payload);
-            if (!parsed.success) {
-                respond(
-                    ack,
-                    err(
-                        'invalid_rounds',
-                        `Rounds per game must be one of ${COMPETITION.ROUNDS_PER_GAME_OPTIONS.join(', ')}.`
-                    )
-                );
-                return;
-            }
-            respond(
-                ack,
-                toAck(
-                    membership.room.setRoundsPerGame(
-                        membership.playerId,
-                        parsed.data.roundsPerGame
                     )
                 )
             );

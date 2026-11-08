@@ -13,7 +13,7 @@ Games without supplied titles use working names:
 | # | Working title |
 |---|---|
 | 1 | Minefield |
-| 2 | Chisel Gauntlet |
+| 2 | Cube Counter |
 | 3 | Crusher Escalator |
 | 4 | Blade Arena |
 | 5 | Stop the Clock |
@@ -28,7 +28,7 @@ Games without supplied titles use working names:
 
 This is the decision everything else follows from.
 
-**Four games are played alone, together.** Stop the Clock, Chisel Gauntlet, Crusher Escalator, and Type Racer Roulette all have each player doing their own thing in their own space. Nothing you do affects my cube, my lane, or my timer. For these, **the browser runs the whole game and reports the result.** The server hands out the round data, waits for everyone to be ready, says go, and collects what comes back.
+**Four games are played alone, together.** Stop the Clock, Cube Counter, Crusher Escalator, and Type Racer Roulette all have each player doing their own thing in their own space. Nothing you do affects my scene, my lane, or my timer. For these, **the browser runs the whole game and reports the result.** The server hands out the round data, waits for everyone to be ready, says go, and collects what comes back.
 
 **Four games use a shared world.** Blade Arena, Minefield, Hidden Crossfire, and Log Dodge share hazards, positions, or elimination timing. Two browsers cannot agree on who got hit, so the server runs those. Hidden Crossfire also keeps each player's aim private until the reveal; Log Dodge uses a fixed lineup rather than free movement.
 
@@ -56,7 +56,7 @@ shared/
   games/         One folder per game: rules, state types, constants
 ```
 
-Game rules that both sides need — the mine grid, the voxel target check, the typing validation — live in `shared/` and are imported by both. Keep them as plain functions with no I/O so they can be tested directly.
+Game rules that both sides need — the mine grid, the block-scene generator and counter, the typing validation — live in `shared/` and are imported by both. Keep them as plain functions with no I/O so they can be tested directly.
 
 Three folders, not twelve packages. Split further only when something actually becomes awkward.
 
@@ -83,12 +83,12 @@ The owner picks a mode:
 - **Random** — the server picks 5 of the 11 games at random, no repeats, shuffled.
 - **Custom** — the owner picks 1 to 11 games in whatever order.
 
-Each selected game is played **twice**. Each play is a scoring round and the winner gets 1 point. Random mode therefore hands out 10 points total; custom mode hands out twice the number of games chosen.
+**Each game decides how many scoring rounds it is played for.** Each scoring round has one winner and awards 1 point, so a game's round count is the most points it can hand out. Stop the Clock has 4 rounds (2 normal, then 2 faded); Cube Counter has 1. The owner does not set a round count. The total points in a competition is the sum of the chosen games' round counts.
 
 The flow:
 
 ```
-Lobby → for each game: [round 1 → results → round 2 → results] → final leaderboard → Lobby
+Lobby → for each game: [round 1 → results → … → round N → results] → final leaderboard → Lobby
 ```
 
 Each round runs through the same short lifecycle:
@@ -134,7 +134,7 @@ Add a protocol version to the connection handshake and reject mismatches with "p
 
 The pattern, shared by four games:
 
-1. Server sends the round data — the target time, the carved shape, the beat sequence, the race text.
+1. Server sends the round data — the target time, the block-counting scenes, the beat sequence, the race text.
 2. Every client says "loaded and ready".
 3. Server picks a start time a second or two out and broadcasts it.
 4. Each client starts its own timer at that moment and plays the whole round locally.
@@ -192,7 +192,7 @@ Turn-based deadlines are server-owned too. Word Bomb's extra-time power-up chang
 Some state stays on the server, not because anyone would go looking, but because the games don't work if the answers are visible:
 
 - Mine positions, until revealed or triggered
-- The Chisel target, once memorization ends
+- Cube Counter's expected block counts (the scenes themselves must reach the client to be drawn; the answer key stays on the server until the round resolves)
 - Liar's Deck hands and deck order
 - Hidden Crossfire aim directions and shot lines, visible only to their owner until the reveal
 - Reported times, until everyone has reported
@@ -210,12 +210,39 @@ Run a corridor, harvester chasing, hidden mines. A detector scans but only while
 
 *Open:* is it a race, a survival, or last-alive? Do scans reveal exact positions or a direction?
 
-### Chisel Gauntlet — self-timed
-Memorize a carved 3×3×3 shape, then reproduce it by removing voxels before time runs out. A 27-bit integer holds the whole cube and comparison is one equality check. The client carves locally so clicks are instant, then submits its mask and elapsed time. Send the target during memorization and stop sending it after.
+### Cube Counter — self-timed
+A block-counting memory game. Each puzzle flashes an isometric picture of a grid with blocks standing on it for a short moment (2 seconds), then hides it. The player types how many blocks they saw. The whole round is a series of puzzles that get harder.
 
-Send periodic mask updates so a disconnect mid-carve is recoverable.
+**The gimmick is that a "block" is not always 1×1.** Early puzzles are easy: a few single cubes, some stacked. Later puzzles mix in larger blocks — footprints up to 3×3 (for example 2×1, 2×2, 3×2, 3×3) — drawn as one solid shape with no internal grid lines. A big block counts as **one**, so a player who counts grid squares or cube faces gets it wrong. Later puzzles also pack blocks closer together, and stack them higher.
 
-*Open:* does a wrong carve kill you immediately or only fail at submission?
+**Scene model.** The grid is always **5×5**. A scene is a list of boxes: `{ x, y, z, width, depth }`, where `x, y` is the grid cell of the corner, `z` is the level (0–2), and:
+- footprint `width × depth` is between 1×1 and 3×3, and the box stays inside the 5×5 grid;
+- every box is exactly one level tall, so a big block is wider, never taller (a stack of three cubes and one tall block would look identical);
+- stacking is at most **3 levels high** (`z` is 0, 1 or 2), so up to three cubes can sit on one cell, e.g. three 1×1 cubes stacked at (0,0);
+- boxes can sit on top of other boxes, but every box must be fully supported (no floating boxes);
+- no two boxes overlap.
+
+The correct answer is the number of boxes in the list. The generator lives in `shared/` as a plain function and takes a difficulty level.
+
+**Camera.** The camera is fixed at roughly 45° — looking down at the grid from a corner, with the grid rotated 45° so the player sees the top and two side faces of every box. This gives proper depth perception: stack height and which box is in front of which can be read at a glance. It is the same view for every player and every puzzle.
+
+**Visibility rule.** Because the camera is fixed, the generator checks every scene with a visibility function before it is sent. Every multi-cell box (footprint larger than 1×1) must be clearly visible: its top face must be completely uncovered, and no taller box in front of it may hide more than a small fraction of its side faces. A big block can never be buried in a lower layer or tucked behind a tower, because that would make the right answer impossible to see. Single 1×1 cubes must have at least one face visible (top or side) so the count is always answerable. Scenes that fail are regenerated.
+
+**Reading big blocks.** Adjacent boxes of the same colour are avoided at higher levels, or drawn with a visible outline, so "one big block" and "two touching blocks" can be told apart.
+
+**Difficulty ramp (per puzzle index in the round).** Box count, share of multi-cell boxes (up to 3×3), stacking height (up to 3 levels) and crowding go up; the grid stays 5×5. The flash time is a constant 2 s at every level, so difficulty comes only from the scene. Tune these numbers by playtesting. The ramp is data in `shared/games/`, not logic in the client.
+
+**Self-timed flow.** The server generates all puzzles for the round and sends the scenes in the round data. The server keeps the expected counts. Each client shows each scene on its local timer for its flash duration, hides it, accepts a typed number, and records the answer time with `performance.now()`. The flash duration is measured locally so latency never shortens or lengthens what a player sees. Clients submit their answers and per-puzzle times at the end, plus low-rate progress (which puzzle they're on) for opponents to see.
+
+Scenes are public by necessity — the browser has to draw them — so the hidden part is the answer key. The server doesn't reveal expected counts until the round resolves, and results are revealed together once everyone has reported (or the timeout fires).
+
+**Scoring a round.** The winner is whoever gets the correct answers in the quickest time. The server compares answers to the key: most correct answers wins, and ties break on the lowest total time spent on the correct answers (time on a wrong answer never counts, so answering fast and wrong can't help). Times are integer milliseconds, so ties are exact; a tie that survives that goes to the runner's tiebreaker. From the outside it still returns exactly one winner.
+
+**Rendering.** A 2D drawing from the fixed ~45° camera (isometric-style projection) on canvas or SVG; no Three.js needed for this game. Draw boxes back to front so occlusion is correct. Use a plain palette and flat shading (top, left, right faces) so the picture is clear at a glance and a big block reads as one object.
+
+**One round, eight puzzles.** Cube Counter is a single scoring round made of 8 consecutive internal puzzles. Each puzzle has a different number and composition of blocks, following the difficulty ramp (which climbs quickly and then levels off, so most of the puzzles sit at the harder end), and the winner of the whole round gets the 1 point. Because there is only one scoring round, there is no reset between rounds.
+
+*Open:* number of puzzles per round; whether the ramp is fixed or one wrong answer ends your run (last-alive style); whether scenes include distractors such as floor markings or differently coloured blocks; and whether puzzle pacing is shared (everyone sees puzzle N at the same moment) or each player advances at their own speed.
 
 ### Crusher Escalator — self-timed
 Hit a directional sequence on rhythm to climb away from a crusher. Own lane, own crusher, nobody interferes — so the client runs the entire ride: judging inputs, applying momentum, advancing the crusher, deciding its own fate. Sends progress for display and a final outcome.
@@ -231,6 +258,8 @@ This is the heaviest game in the set for both bandwidth and server CPU — build
 
 ### Stop the Clock — self-timed
 Hit a target between 2.00 and 8.00 seconds. Server sends the target and a start time; each client times itself and reports. Results stay hidden until everyone's in, then reveal together. Exact ties go to a tiebreaker among just those players.
+
+It is played for **4 scoring rounds**: rounds 1–2 are normal, and in rounds 3–4 the clock fades out mid-round so players have to feel the interval.
 
 The simplest game in the set, and the right one to build first.
 
@@ -308,13 +337,13 @@ One bit of self-protection is worth having: bound message sizes and entity count
 
 ## 14. Testing
 
-**Game rules as plain functions.** Everything in `shared/games/` should be testable by calling it — no sockets, no rendering, no clock. Voxel comparison, mine collisions, typing validation, blade bounces, scoring. This is where most of the value is.
+**Game rules as plain functions.** Everything in `shared/games/` should be testable by calling it — no sockets, no rendering, no clock. Block-scene generation (no overlaps, nothing fully hidden, count matches the box list), answer scoring and tiebreaks, mine collisions, typing validation, blade bounces, scoring. This is where most of the value is.
 
 **New game rules.** Check that Hidden Crossfire never exposes another player's aim before the reveal and resolves shots from one frozen state; Infinite Tic-Tac-Toe removes each symbol's oldest mark before checking a win; Log Dodge judges jump/duck windows consistently; and Word Bomb handles valid words, point spending, reversed turns, targeted four-letter combinations, next-turn revolvers, and extra time without double activation.
 
 **The self-timed round runner.** Four games depend on it, so test: everyone reports; someone doesn't; nobody does; duplicate reports; exact ties; a late ready check pushing the start back; a result arriving after the round closed.
 
-**The competition layer**, with fake games standing in: random picks 5 unique, custom keeps order, two rounds per game, one point per round, scores survive game changes and reconnects, leaderboard sorts and handles ties, a new competition clears the old one.
+**The competition layer**, with fake games standing in: random picks 5 unique, custom keeps order, per-game round counts (Stop the Clock 4, Cube Counter 1), one point per round, scores survive game changes and reconnects, leaderboard sorts and handles ties, a new competition clears the old one.
 
 **Latency.** The one test worth writing specifically: a client with 300 ms added latency should get an identical result to one with none in every self-timed game. If latency changes a Stop the Clock outcome, timing has leaked into the network layer.
 
@@ -327,14 +356,14 @@ One bit of self-protection is worth having: bound message sizes and entity count
 - Show connecting, reconnecting, and disconnected states.
 - Show a clear message for a bad room code or a full room.
 - Show who the owner is, and say so when it changes.
-- Show which game you're on, out of how many, and whether it's round 1 or 2.
+- Show which game you're on, out of how many, and which round of that game it is (e.g. round 3 of 4).
 - Make the ready check visible — show who the room is waiting for. It's what makes the shared start fair, so it shouldn't be a hidden handshake.
 - Don't let anyone interact before their snapshot has applied.
 - Self-timed rounds run entirely on the local clock, so nothing should stutter or wait on the network mid-round.
 - In shared games, never show a local win before the server confirms it. Smooth small corrections; snap eliminations.
 - Hidden Crossfire shows only your own aim until the reveal, with a clear freeze/reveal cue and visible shrinking bounds.
 - Turn-based games show whose turn it is. Infinite Tic-Tac-Toe marks the next piece to expire; Word Bomb shows the letter combination, timer, spendable points, power-up costs, and queued next-turn effects.
-- After each round: winner, point awarded, standings. After both rounds: a game summary. At the end: the full leaderboard.
+- After each round: winner, point awarded, standings. After a game's last round: a game summary. At the end: the full leaderboard.
 - If a tab is backgrounded during a timed round, tell the player their timing may be off rather than silently reporting it.
 - Prompt for a reload on a protocol mismatch.
 
@@ -344,7 +373,7 @@ One bit of self-protection is worth having: bound message sizes and entity count
 
 **2. Stop the Clock.** The whole self-timed pattern — ready check, scheduled start, local timing, result collection, tiebreakers — with essentially no rendering. Smallest possible first real game, and it proves the machinery four games will reuse.
 
-**3. Chisel Gauntlet, then Type Racer Roulette.** Both reuse the self-timed runner directly. Chisel adds a cube renderer; Type Racer adds the one server round trip and the shared text rules.
+**3. Cube Counter, then Type Racer Roulette.** Both reuse the self-timed runner directly. Cube Counter adds a 2D isometric block renderer and the scene generator; Type Racer adds the one server round trip and the shared text rules.
 
 **4. Liar's Deck, then Infinite Tic-Tac-Toe and Word Bomb.** Start with turn ownership and per-player private state. Reuse action handling for board moves and timed words, then add Word Bomb's spendable points and targeted power-ups.
 
@@ -376,8 +405,8 @@ Ship this:
 
 - 2-8 players, one server, no database.
 - Room codes, owner with automatic transfer.
-- Both playlist modes, two rounds per game, one point per round, leaderboard at the end.
-- Three games: **Stop the Clock, Chisel Gauntlet, Liar's Deck.**
+- Both playlist modes, per-game round counts (Stop the Clock 4, Cube Counter 1), one point per round, leaderboard at the end.
+- Three games: **Stop the Clock, Cube Counter, Liar's Deck.**
 
 Those three cover self-timed games, turn-based games, and private state. The remaining eight add game logic; Minefield, Blade Arena, Hidden Crossfire, and Log Dodge also need the shared-world simulation layer.
 
@@ -386,7 +415,7 @@ Explicitly not in v1: multiple server instances, Redis, a database, surviving a 
 ## 19. A game is done when
 
 - It's clear whether it's self-timed, shared-world, or turn-based, and it's built that way.
-- It resets between round 1 and round 2.
+- It resets between its own rounds, if it has more than one.
 - It returns exactly one winner and never touches the score table itself.
 - Self-timed: it doesn't start until everyone's ready, and it resolves when someone never reports.
 - Shared: deadlines are server-side and nothing is shown as final before the server says so.

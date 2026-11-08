@@ -424,6 +424,7 @@ export class SelfTimedRound<TRound, TResult> {
             gameIndex: this.gameIndex,
             totalGames: this.totalGames,
             roundInGame: this.roundInGame,
+            roundsPerGame: this.roundsPerGame,
             isTiebreak: this.isTiebreak,
             participants: [...this.participants],
             ready: [...this.ready],

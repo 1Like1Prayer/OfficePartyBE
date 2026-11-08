@@ -9,18 +9,24 @@
 
 import { GAME_CATALOG, type GameId } from '../shared/games/catalog';
 import type { SelfTimedGameModule } from '../shared/games/selfTimed';
+import { cubeCounterModule } from '../shared/games/cubeCounter/module';
 import { stopTheClockModule } from '../shared/games/stopTheClock';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnySelfTimedModule = SelfTimedGameModule<any, any>;
 
 const SELF_TIMED_MODULES: Partial<Record<GameId, AnySelfTimedModule>> = {
+    'cube-counter': cubeCounterModule,
     'stop-the-clock': stopTheClockModule
 };
 
 export const getSelfTimedModule = (
     gameId: GameId
 ): AnySelfTimedModule | null => SELF_TIMED_MODULES[gameId] ?? null;
+
+/** How many scoring rounds a game is played for. Zero for games that aren't built. */
+export const roundsForGame = (gameId: GameId): number =>
+    getSelfTimedModule(gameId)?.roundsPerGame ?? 0;
 
 /** Games a playlist may actually contain right now. */
 export const playableGameIds = (): GameId[] =>

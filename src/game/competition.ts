@@ -1,8 +1,8 @@
 /**
  * The competition layer (section 6).
  *
- * Lobby -> for each game: [round 1 -> results -> round 2 -> results] ->
- * final leaderboard -> Lobby.
+ * Lobby -> for each game: [each of its rounds -> results] -> final
+ * leaderboard -> Lobby. Every game declares how many rounds it gets.
  *
  * It owns the playlist, the position within it, and the score table. Games
  * report a winner and never touch the leaderboard themselves.
@@ -15,9 +15,10 @@ import type {
     LeaderboardRow,
     PlaylistMode,
     PlaylistPayload,
+    RoundsByGame,
     ScoreRow
 } from '../shared/protocol';
-import { isPlayable, playableGameIds } from './registry';
+import { isPlayable, playableGameIds, roundsForGame } from './registry';
 
 export interface PlaylistError {
     code: 'invalid_playlist';
@@ -74,15 +75,15 @@ export interface RoundPosition {
     /** 1-based position in the playlist. */
     gameIndex: number;
     totalGames: number;
-    /** 1-based round within the game (1 or 2). */
+    /** 1-based round within the game. */
     roundInGame: number;
+    /** How many scoring rounds this game has in total. */
+    roundsPerGame: number;
 }
 
 export class Competition {
     readonly mode: PlaylistMode;
     readonly playlist: readonly GameId[];
-    /** How many scoring rounds each game gets. Chosen by the owner. */
-    readonly roundsPerGame: number;
 
     private gameCursor = 0;
     private roundCursor = 0;
@@ -92,12 +93,10 @@ export class Competition {
     constructor(params: {
         mode: PlaylistMode;
         playlist: readonly GameId[];
-        roundsPerGame: number;
         players: readonly string[];
     }) {
         this.mode = params.mode;
         this.playlist = params.playlist;
-        this.roundsPerGame = params.roundsPerGame;
         for (const playerId of params.players) this.scores.set(playerId, 0);
     }
 
@@ -122,7 +121,8 @@ export class Competition {
             gameId,
             gameIndex: this.gameCursor + 1,
             totalGames: this.playlist.length,
-            roundInGame: this.roundCursor + 1
+            roundInGame: this.roundCursor + 1,
+            roundsPerGame: roundsForGame(gameId)
         };
     }
 
@@ -134,7 +134,8 @@ export class Competition {
     /** Move past the round just finished. Returns false when the match is over. */
     advance(): boolean {
         this.roundCursor += 1;
-        if (this.roundCursor >= this.roundsPerGame) {
+        const currentGame = this.playlist[this.gameCursor];
+        if (currentGame === undefined || this.roundCursor >= roundsForGame(currentGame)) {
             this.roundCursor = 0;
             this.gameCursor += 1;
         }
@@ -171,11 +172,14 @@ export class Competition {
     }
 
     describePlaylist(): PlaylistPayload {
+        const roundsByGame: RoundsByGame = {};
+        for (const gameId of this.playlist) roundsByGame[gameId] = roundsForGame(gameId);
+
         return {
             mode: this.mode,
             playlist: [...this.playlist],
-            roundsPerGame: this.roundsPerGame,
-            totalRounds: this.playlist.length * this.roundsPerGame
+            roundsByGame,
+            totalRounds: this.playlist.reduce((sum, id) => sum + roundsForGame(id), 0)
         };
     }
 }

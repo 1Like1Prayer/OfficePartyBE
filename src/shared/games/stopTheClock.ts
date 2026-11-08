@@ -9,6 +9,7 @@
  * no I/O.
  */
 
+import { assignSharedRanks } from './ranking';
 import type {
     RankedEntry,
     RoundContext,
@@ -17,6 +18,9 @@ import type {
 } from './selfTimed';
 
 export const STOP_THE_CLOCK = {
+    /** Scoring rounds per game: the first half normal, the second half faded. */
+    ROUNDS_PER_GAME: 4,
+    BLIND_ROUNDS: 2,
     MIN_TARGET_MS: 2_000,
     MAX_TARGET_MS: 8_000,
     /** Targets land on whole seconds so they read cleanly as "4 s". */
@@ -54,12 +58,9 @@ export interface StopTheClockResult {
     timingSuspect: boolean;
 }
 
-/**
- * Blind in the last two rounds of a game (the last one when a game has fewer
- * than five rounds): 2 rounds -> 2, 3 rounds -> 3, 5 rounds -> 4 and 5.
- */
+/** Faded (blind) in the last BLIND_ROUNDS rounds: with 4 rounds, rounds 3 and 4. */
 export const isBlindRound = ({ roundInGame, roundsPerGame }: RoundContext): boolean =>
-    roundInGame > roundsPerGame - (roundsPerGame >= 5 ? 2 : 1);
+    roundInGame > roundsPerGame - STOP_THE_CLOCK.BLIND_ROUNDS;
 
 /** Pick a whole-second target between minMs and the maximum. */
 export const pickTargetMs = (minMs: number = STOP_THE_CLOCK.MIN_TARGET_MS): number => {
@@ -120,29 +121,19 @@ export const rank = (
         }))
         .sort((a, b) => a.error - b.error || a.playerId.localeCompare(b.playerId));
 
-    const ranked: RankedEntry[] = [];
-    let lastError: number | null = null;
-    let lastRank = 0;
-
-    scored.forEach((entry, index) => {
-        const isTie = lastError !== null && entry.error === lastError;
-        const position = isTie ? lastRank : index + 1;
-        lastError = entry.error;
-        lastRank = position;
-        ranked.push({
-            playerId: entry.playerId,
+    return assignSharedRanks(scored, (a, b) => a.error === b.error).map(
+        ({ item, rank: position }) => ({
+            playerId: item.playerId,
             rank: position,
             reported: true,
             detail: {
-                elapsedMs: entry.result.elapsedMs,
-                errorMs: entry.error,
+                elapsedMs: item.result.elapsedMs,
+                errorMs: item.error,
                 targetMs: round.targetMs,
-                timingSuspect: entry.result.timingSuspect
+                timingSuspect: item.result.timingSuspect
             }
-        });
-    });
-
-    return ranked;
+        })
+    );
 };
 
 export const resultTimeoutMs = (round: StopTheClockRound): number =>
@@ -155,6 +146,7 @@ export const stopTheClockModule: SelfTimedGameModule<
     id: 'stop-the-clock',
     title: 'Stop the Clock',
     kind: 'self-timed',
+    roundsPerGame: STOP_THE_CLOCK.ROUNDS_PER_GAME,
     createRoundData,
     parseResult,
     parseProgress,

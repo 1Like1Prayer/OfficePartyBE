@@ -2,11 +2,11 @@
 
 ## 1. What this is
 
-A plan for ten browser-based minigames played by a small office group, running on a Node.js server with Socket.IO.
+A plan for eleven browser-based minigames played by a small office group, running on a Node.js server with Socket.IO.
 
 The scale this is built for: up to 8 players in a room, a handful of rooms at once, everyone friendly. That scale rules out most of what a "real" multiplayer platform would need. There is no matchmaking, no accounts, no database, no scaling tier, no anti-cheat. Adding those later is possible; building them now would be most of the work for none of the fun.
 
-The goal is one shared foundation the games sit on, so that adding the tenth game is much less work than the first.
+The goal is one shared foundation the games sit on, so that adding the eleventh game is much less work than the first.
 
 Games without supplied titles use working names:
 
@@ -15,25 +15,26 @@ Games without supplied titles use working names:
 | 1 | Minefield |
 | 2 | Chisel Gauntlet |
 | 3 | Crusher Escalator |
-| 4 | Safe Tile Arena |
-| 5 | Pea Dinner |
-| 6 | Train Alcoves |
-| 7 | Blade Arena |
-| 8 | Stop the Clock |
-| 9 | Type Racer Roulette |
-| 10 | Liar's Deck |
+| 4 | Blade Arena |
+| 5 | Stop the Clock |
+| 6 | Type Racer Roulette |
+| 7 | Liar's Deck |
+| 8 | Hidden Crossfire |
+| 9 | Infinite Tic-Tac-Toe |
+| 10 | Log Dodge |
+| 11 | Word Bomb |
 
-## 2. The core idea: two kinds of game
+## 2. The core idea: three kinds of game
 
 This is the decision everything else follows from.
 
-**Five games are played alone, together.** Stop the Clock, Chisel Gauntlet, Crusher Escalator, Pea Dinner, and Type Racer Roulette all have each player doing their own thing in their own space. Nothing you do affects my plate, my cube, or my timer. For these, **the browser runs the whole game and reports the result.** The server hands out the round data, waits for everyone to be ready, says go, and collects what comes back.
+**Four games are played alone, together.** Stop the Clock, Chisel Gauntlet, Crusher Escalator, and Type Racer Roulette all have each player doing their own thing in their own space. Nothing you do affects my cube, my lane, or my timer. For these, **the browser runs the whole game and reports the result.** The server hands out the round data, waits for everyone to be ready, says go, and collects what comes back.
 
-**Four games are genuinely shared.** Safe Tile Arena, Train Alcoves, Blade Arena, and Minefield have players pushing each other, contesting the same space, and dodging the same hazards. Two browsers cannot agree on who fell off the tile, so the server runs those.
+**Four games use a shared world.** Blade Arena, Minefield, Hidden Crossfire, and Log Dodge share hazards, positions, or elimination timing. Two browsers cannot agree on who got hit, so the server runs those. Hidden Crossfire also keeps each player's aim private until the reveal; Log Dodge uses a fixed lineup rather than free movement.
 
-**Liar's Deck is its own thing** — turn-based, and the server holds the cards because the game doesn't work if you can see them.
+**Three games are turn-based.** Liar's Deck, Infinite Tic-Tac-Toe, and Word Bomb use server-owned turns and validated actions rather than continuous movement. The server holds private cards, maintains the board and placement order, or manages word deadlines and power-ups, depending on the game.
 
-So the work splits into: a lobby and result collector that five games share and which is mostly not networking at all, plus one real-time movement layer that four games share, plus a card game.
+So the work splits into: a lobby and result collector that four games share and which is mostly not networking at all, one real-time simulation layer for four shared-world games, and turn-based action handling for three games.
 
 ## 3. Stack
 
@@ -41,7 +42,7 @@ So the work splits into: a lobby and result collector that five games share and 
 
 **Client:** TypeScript, Socket.IO client, a UI framework (React or Svelte), and Three.js for the 3D games. `performance.now()` for local timing. Web Audio for sound.
 
-**Physics:** only the four shared games need it, and they need very little. Use simple shapes — circles, boxes, capsules on a grid — and write the collision code by hand rather than pulling in a physics engine. A tile grid, a blade bouncing off walls, and a shove impulse are each a few dozen lines. A physics engine would be more work to configure than to replace, and it would have to run on the server too.
+**Physics:** only the four shared-world games need collision rules, and they need very little. Use simple shapes — circles, boxes, capsules on a grid — and write the collision code by hand rather than pulling in a physics engine. A mine grid, a blade bouncing off walls, and a moving harvester are each a few dozen lines. Hidden Crossfire adds shot-line intersections; Log Dodge adds jump/duck collision windows. A physics engine would be more work to configure than to replace, and it would have to run on the server too.
 
 **JSON messages.** At 8 players and 15 snapshots a second, JSON is fine. Binary encoding is a real optimization but not one to do before there's a measured problem.
 
@@ -55,7 +56,7 @@ shared/
   games/         One folder per game: rules, state types, constants
 ```
 
-Game rules that both sides need — the tile grid, the voxel target check, the typing validation — live in `shared/` and are imported by both. Keep them as plain functions with no I/O so they can be tested directly.
+Game rules that both sides need — the mine grid, the voxel target check, the typing validation — live in `shared/` and are imported by both. Keep them as plain functions with no I/O so they can be tested directly.
 
 Three folders, not twelve packages. Split further only when something actually becomes awkward.
 
@@ -79,8 +80,8 @@ Configure the client with `transports: ['websocket']` to skip the long-polling h
 
 The owner picks a mode:
 
-- **Random** — the server picks 5 of the 10 games at random, no repeats, shuffled.
-- **Custom** — the owner picks 1 to 10 games in whatever order.
+- **Random** — the server picks 5 of the 11 games at random, no repeats, shuffled.
+- **Custom** — the owner picks 1 to 11 games in whatever order.
 
 Each selected game is played **twice**. Each play is a scoring round and the winner gets 1 point. Random mode therefore hands out 10 points total; custom mode hands out twice the number of games chosen.
 
@@ -96,9 +97,9 @@ Each round runs through the same short lifecycle:
 Loading → ReadyCheck → Start → Playing → Results
 ```
 
-Between rounds, the game resets everything of its own — eliminations, hands, progress. Competition points never reset until the leaderboard has been shown.
+Between rounds, the game resets everything of its own — eliminations, hands, progress, and in-game currencies. Competition points never reset until the leaderboard has been shown. Word Bomb's spendable word points are local to that game, not the competition score.
 
-Several games have their own internal rounds: Minefield's corridor sections, Stop the Clock's tiebreakers, Safe Tile Arena's hazard phases, Liar's Deck's card turns. Those are the game's business. From the outside, a scoring round hands back exactly one winner. If a game can end with nobody standing, it runs its own sudden-death to break it, and still returns one winner.
+Several games have their own internal rounds or turns: Minefield's corridor sections, Stop the Clock's tiebreakers, Hidden Crossfire's aim/reveal cycles, and the turn-based games' moves. Those are the game's business. From the outside, a scoring round hands back exactly one winner. If a game can end with nobody standing, it runs its own sudden-death to break it, and still returns one winner.
 
 The server keeps the score table. Games report a winner and never touch the leaderboard themselves.
 
@@ -121,7 +122,7 @@ Message types, roughly:
 | Round | round data, ready check, start at T, round over |
 | Self-timed | progress, result |
 | Shared-world | input, snapshot, event |
-| Cards | your hand, play, challenge, table state |
+| Turn-based | your hand, play, challenge, place mark, submit word, activate power-up, game state |
 
 Use Socket.IO acknowledgements where the client wants a direct reply — submitting a result, playing a card. It saves inventing a correlation-ID scheme.
 
@@ -131,16 +132,16 @@ Add a protocol version to the connection handshake and reject mismatches with "p
 
 ### 8.1 Self-timed games
 
-The pattern, shared by five games:
+The pattern, shared by four games:
 
-1. Server sends the round data — the target time, the beat sequence, the murderer's schedule, the race text.
+1. Server sends the round data — the target time, the carved shape, the beat sequence, the race text.
 2. Every client says "loaded and ready".
 3. Server picks a start time a second or two out and broadcasts it.
 4. Each client starts its own timer at that moment and plays the whole round locally.
 5. Client works out its own result and sends it.
 6. Server collects results, waits for everyone or times out, compares, announces the winner.
 
-Latency never touches the measurement. A player on bad wifi and a player on ethernet time the same interval with the same instrument. There's no clock correction, no compensation, no fairness setting to configure. This is the main reason five of the games need almost no netcode.
+Latency never touches the measurement. A player on bad wifi and a player on ethernet time the same interval with the same instrument. There's no clock correction, no compensation, no fairness setting to configure. This is the main reason four of the games need almost no netcode.
 
 Two things to get right:
 
@@ -152,11 +153,11 @@ Report times as integer milliseconds so ties are exact.
 
 Clients also send a low-rate progress update (5 Hz or so) purely so opponents can see how everyone's doing. It has no effect on the outcome.
 
-Build this once. Five games use it and only the "compare results" function differs.
+Build this once. Four games use it and only the "compare results" function differs.
 
 ### 8.2 Shared-world games
 
-The server runs a fixed tick — 30/second is a reasonable start — for the four movement games. Each tick it reads inputs, moves everything, checks collisions, and emits events. Snapshots go out at half the tick rate or so; they don't need to match it.
+The server runs a fixed tick — 30/second is a reasonable start — for the four shared-world games. Each tick it reads inputs, moves everything, checks collisions, and emits events. Snapshots go out at half the tick rate or so; they don't need to match it.
 
 Clients send input at 20-30 Hz, coalesced. Hold one pending input and replace it rather than queueing; a stale movement vector isn't worth sending.
 
@@ -164,15 +165,17 @@ Clients render other players slightly behind, interpolating between the last two
 
 Clients predict their own movement so it feels immediate, and correct when the server's version arrives. Small differences get smoothed; eliminations and big corrections snap.
 
-**Snapshots for what's true, events for what happened.** Position, velocity, phase, alive state go in snapshots. Exploded, eliminated, tile collapsed, hit go out as events. Events must arrive; snapshots can be dropped once they're stale — emit those with Socket.IO's `volatile` flag so a congested socket skips them instead of piling them up.
+**Snapshots for what's true, events for what happened.** Position, velocity, phase, alive state go in snapshots. Exploded, eliminated, hit go out as events. Events must arrive; snapshots can be dropped once they're stale — emit those with Socket.IO's `volatile` flag so a congested socket skips them instead of piling them up.
 
 Send full snapshots. Delta encoding is a real technique but it optimizes a bandwidth problem an 8-player room doesn't have.
 
-### 8.3 Liar's Deck
+### 8.3 Turn-based games
 
-Turn-based, so just send actions and broadcast the resulting table state. No tick loop, no snapshots beyond a periodic full state for reconnects.
+Liar's Deck, Infinite Tic-Tac-Toe, and Word Bomb send actions and broadcast the resulting game state. No continuous tick loop is needed; use scheduled deadlines for timed turns and send full state for reconnects.
 
-The server holds the deck and every hand. Each player's socket gets only their own cards.
+The server validates who may perform each action, including Word Bomb power-ups activated by waiting players. It owns turn order, board changes, word validation, deadlines, point balances, and power-up effects.
+
+For Liar's Deck, the server holds the deck and every hand. Each player's socket gets only their own cards. Infinite Tic-Tac-Toe's board and placement order are public; Word Bomb publishes the active turn, letter combination, deadline, and resolved effects.
 
 ## 9. Timing and deadlines
 
@@ -180,7 +183,9 @@ The server keeps a monotonic clock per room. Never use wall-clock time; an OS cl
 
 Clients ping the server every couple of seconds to estimate round-trip time and clock offset. **This is used only to convert a scheduled server time into a local one** — for countdowns, animations, and audio cues. It never adjusts a reported result.
 
-Shared-world deadlines — a tile collapse, a train passing — are evaluated on the server tick, since they depend on where everyone actually is. Send the deadline ahead of time so clients can animate toward it, and allow a small grace window so an input sent just before the visible cutoff still counts. That's a courtesy for normal lag.
+Shared-world deadlines are evaluated on the server tick, since they depend on where everyone actually is. Send the deadline ahead of time so clients can animate toward it, and allow a small grace window so an input sent just before the visible cutoff still counts. That's a courtesy for normal lag.
+
+Turn-based deadlines are server-owned too. Word Bomb's extra-time power-up changes the player's next-turn deadline on the server, and the updated deadline is sent to everyone.
 
 ## 10. Hidden information
 
@@ -189,6 +194,7 @@ Some state stays on the server, not because anyone would go looking, but because
 - Mine positions, until revealed or triggered
 - The Chisel target, once memorization ends
 - Liar's Deck hands and deck order
+- Hidden Crossfire aim directions and shot lines, visible only to their owner until the reveal
 - Reported times, until everyone has reported
 
 One habit keeps this from leaking by accident: when building a snapshot, list the fields you're sending rather than filtering a copy of the full state. Then a new field has to be added deliberately before anyone can see it.
@@ -218,23 +224,6 @@ Because judging is local, the beat the player hears is exactly the beat that sco
 
 *Open:* first to the top, last alive, or survive a duration?
 
-### Safe Tile Arena — shared
-A 6×8 grid, a safe tile type announced each phase, everything else collapses. Players shove each other. Server resolves movement, shoves, and who's standing where at the deadline. Make shoving an explicit impulse with a range and cooldown rather than emergent physics — easier to tune and easier to send.
-
-*Open:* jumping? shove range and cooldown?
-
-### Pea Dinner — self-timed
-Eat peas with a mouse-controlled fork while the murderer looks down; freeze when he looks up. The server sends the full look-up schedule up front; each client animates the murderer on its own clock and checks its own pointer movement against shared thresholds.
-
-The thresholds — max displacement, max velocity, jitter tolerance — ship with the round data so everyone is judged identically. Evaluate over a short window, not a single frame, so mouse hardware doesn't decide it.
-
-Nice side effect: no pointer stream to the server at all, and the transition is judged at the exact instant the player saw it happen.
-
-### Train Alcoves — shared
-Six alcoves, a train, crushing pillars in the red ones, not enough safe space. Server decides who's in which alcove, because that's the contested part. Keep hazards discrete: the train has a time window and a kill box, each pillar has an activation time and a crush box.
-
-*Open:* how many fit per alcove? shoving rules?
-
 ### Blade Arena — shared
 Blades spawn from three holes and ricochet. Dodge. Server simulates blade motion and hits. Use swept collision so fast blades don't tunnel through players. Cap the blade count.
 
@@ -257,9 +246,42 @@ Accept a challenge that arrives just after the deadline if it was sent before th
 
 *Open:* deck composition, cards per play, penalty odds, when the deck resets.
 
+### Hidden Crossfire — shared
+Each player can move around the map and aim during a short window of a few seconds. They see their own line of fire, but nobody else's. When the timer stops, movement and aim lock, all shot lines are revealed, and shots resolve. The map gets smaller after each internal round. Last survivor wins.
+
+The server owns positions, private aim, the phase deadline, map bounds, and eliminations. Send aim feedback only to its owner before the reveal; do not leak it through public snapshots or facing animations. Resolve all shots from the same frozen state so processing order cannot decide who survives.
+
+*Open:* exact aim/reveal timings, shot width and range, map-shrink rules, what happens to players outside the new bounds, and sudden-death rules if everyone is eliminated together.
+
+### Infinite Tic-Tac-Toe — turn-based
+Play tic-tac-toe with no more than three X marks and three O marks on the board. When a player places a fourth mark, their oldest mark disappears; every subsequent placement does the same. Three in a row wins, evaluated on the board after the oldest mark is removed.
+
+The server keeps a placement-order queue for each symbol, validates the active player's move, removes the oldest mark when necessary, and broadcasts the resulting board. Reconnect state includes placement order so players can see which mark will disappear next.
+
+*Open:* how a room with more than two players is organized into matches and produces one scoring-round winner, whether a player can place directly on their own expiring square, and how repeated positions or indefinitely long games are handled.
+
+### Log Dodge — shared
+All players stand in a line while logs come toward them. Each incoming log demands a quick choice: jump or duck. Players hit by a log are eliminated; last survivor wins.
+
+The server owns the common obstacle timing, jump/duck action windows, collisions, and eliminations. Clients animate the approach and their own response immediately. Jump and duck are discrete actions, not movement vectors to discard through input coalescing.
+
+*Open:* log patterns and warning time, action duration and cooldowns, whether ducking is held or tapped, difficulty progression, and simultaneous-last-elimination tiebreaks.
+
+### Word Bomb — turn-based, with power-ups
+Players take timed turns submitting a word that matches the required letter combination. Each correct word earns in-game points. While waiting for their turn, players can spend those points to activate power-ups:
+
+- **Reverse direction:** change the direction of play.
+- **Four-letter target:** force a chosen player to use a four-letter combination.
+- **One-bullet revolver:** equip a revolver containing one bullet for your next turn and choose which opponent to aim at.
+- **Extra time:** add time to your next turn.
+
+The server validates words, awards and spends points, manages turn order and targeted combinations, applies next-turn effects, and resolves revolver actions. Purchases must not overspend the balance, and any extra time must update the authoritative deadline. These spendable points are separate from the competition's one-point round award.
+
+*Open:* dictionary and letter-matching rules, repeated words, points earned and power-up costs, activation timing and stacking, revolver firing rules/chance model/hit consequences, lives, and the round's end condition and winner.
+
 ## 12. When things go wrong
 
-**Player disconnects.** Hold the slot ~30s. Shared games: their character goes inert, then they're out. Self-timed games: the round finishes without their result. Cards: pause briefly, then auto-pass.
+**Player disconnects.** Hold the slot ~30s. Shared games: their character goes inert, then they're out. Self-timed games: the round finishes without their result. Liar's Deck: pause briefly, then auto-pass. Other turn-based games need an explicit timeout or forfeit rule; never invent a board move or word for a disconnected player.
 
 **Owner disconnects.** Transfer ownership. Match continues.
 
@@ -286,9 +308,11 @@ One bit of self-protection is worth having: bound message sizes and entity count
 
 ## 14. Testing
 
-**Game rules as plain functions.** Everything in `shared/games/` should be testable by calling it — no sockets, no rendering, no clock. Voxel comparison, tile classification, typing validation, blade bounces, scoring. This is where most of the value is.
+**Game rules as plain functions.** Everything in `shared/games/` should be testable by calling it — no sockets, no rendering, no clock. Voxel comparison, mine collisions, typing validation, blade bounces, scoring. This is where most of the value is.
 
-**The self-timed round runner.** Five games depend on it, so test: everyone reports; someone doesn't; nobody does; duplicate reports; exact ties; a late ready check pushing the start back; a result arriving after the round closed.
+**New game rules.** Check that Hidden Crossfire never exposes another player's aim before the reveal and resolves shots from one frozen state; Infinite Tic-Tac-Toe removes each symbol's oldest mark before checking a win; Log Dodge judges jump/duck windows consistently; and Word Bomb handles valid words, point spending, reversed turns, targeted four-letter combinations, next-turn revolvers, and extra time without double activation.
+
+**The self-timed round runner.** Four games depend on it, so test: everyone reports; someone doesn't; nobody does; duplicate reports; exact ties; a late ready check pushing the start back; a result arriving after the round closed.
 
 **The competition layer**, with fake games standing in: random picks 5 unique, custom keeps order, two rounds per game, one point per round, scores survive game changes and reconnects, leaderboard sorts and handles ties, a new competition clears the old one.
 
@@ -308,6 +332,8 @@ One bit of self-protection is worth having: bound message sizes and entity count
 - Don't let anyone interact before their snapshot has applied.
 - Self-timed rounds run entirely on the local clock, so nothing should stutter or wait on the network mid-round.
 - In shared games, never show a local win before the server confirms it. Smooth small corrections; snap eliminations.
+- Hidden Crossfire shows only your own aim until the reveal, with a clear freeze/reveal cue and visible shrinking bounds.
+- Turn-based games show whose turn it is. Infinite Tic-Tac-Toe marks the next piece to expire; Word Bomb shows the letter combination, timer, spendable points, power-up costs, and queued next-turn effects.
 - After each round: winner, point awarded, standings. After both rounds: a game summary. At the end: the full leaderboard.
 - If a tab is backgrounded during a timed round, tell the player their timing may be off rather than silently reporting it.
 - Prompt for a reload on a protocol mismatch.
@@ -316,17 +342,17 @@ One bit of self-protection is worth having: bound message sizes and entity count
 
 **1. Lobby and competition shell.** Rooms, join by code, owner and transfer, playlist in both modes, the two-round runner, score table, leaderboard. Test it with placeholder games that return a random winner. This is the spine and it's worth having solid before any real game exists.
 
-**2. Stop the Clock.** The whole self-timed pattern — ready check, scheduled start, local timing, result collection, tiebreakers — with essentially no rendering. Smallest possible first real game, and it proves the machinery five games will reuse.
+**2. Stop the Clock.** The whole self-timed pattern — ready check, scheduled start, local timing, result collection, tiebreakers — with essentially no rendering. Smallest possible first real game, and it proves the machinery four games will reuse.
 
 **3. Chisel Gauntlet, then Type Racer Roulette.** Both reuse the self-timed runner directly. Chisel adds a cube renderer; Type Racer adds the one server round trip and the shared text rules.
 
-**4. Liar's Deck.** First turn-based game and first per-player private state. No new networking beyond addressing a message to one socket.
+**4. Liar's Deck, then Infinite Tic-Tac-Toe and Word Bomb.** Start with turn ownership and per-player private state. Reuse action handling for board moves and timed words, then add Word Bomb's spendable points and targeted power-ups.
 
-**5. Movement layer + Safe Tile Arena.** The first real netcode: tick loop, input, snapshots, interpolation, prediction, shoving. Safe Tile Arena first because a grid with discrete checks is far easier to debug than free-moving hazards. Test this under packet loss, not just latency.
+**5. Movement layer.** The first real netcode: tick loop, input, snapshots, interpolation, prediction. Test this under packet loss, not just latency.
 
-**6. Train Alcoves, Minefield, Blade Arena.** Reuse the movement layer; each adds only its own hazard. Blade Arena last since it sets the performance ceiling.
+**6. Minefield, Log Dodge, Hidden Crossfire, then Blade Arena.** Reuse the shared-world layer. Log Dodge adds discrete jump/duck actions; Hidden Crossfire adds private aim, freeze/reveal phases, and shrinking bounds. Blade Arena last since it sets the performance ceiling.
 
-**7. Crusher Escalator, Pea Dinner.** Almost entirely client-side, so the work is local timing polish and audio, not networking. Could move earlier if someone wants to build them.
+**7. Crusher Escalator.** Almost entirely client-side, so the work is local timing polish and audio, not networking. Could move earlier if someone wants to build it.
 
 **8. Cleanup.** Cross-browser checks, packet loss, accessibility, disconnect UX.
 
@@ -351,19 +377,20 @@ Ship this:
 - 2-8 players, one server, no database.
 - Room codes, owner with automatic transfer.
 - Both playlist modes, two rounds per game, one point per round, leaderboard at the end.
-- Four games: **Stop the Clock, Chisel Gauntlet, Safe Tile Arena, Liar's Deck.**
+- Three games: **Stop the Clock, Chisel Gauntlet, Liar's Deck.**
 
-Those four cover every pattern in the platform — self-timed, shared-world movement, turn-based, and private state — so the remaining six are mostly game logic rather than new infrastructure.
+Those three cover self-timed games, turn-based games, and private state. The remaining eight add game logic; Minefield, Blade Arena, Hidden Crossfire, and Log Dodge also need the shared-world simulation layer.
 
 Explicitly not in v1: multiple server instances, Redis, a database, surviving a restart, accounts, matchmaking, delta compression, binary encoding, spectators if they turn out to be fiddly.
 
 ## 19. A game is done when
 
-- It's clear whether it's self-timed or shared, and it's built that way.
+- It's clear whether it's self-timed, shared-world, or turn-based, and it's built that way.
 - It resets between round 1 and round 2.
 - It returns exactly one winner and never touches the score table itself.
 - Self-timed: it doesn't start until everyone's ready, and it resolves when someone never reports.
 - Shared: deadlines are server-side and nothing is shown as final before the server says so.
+- Turn-based: actions, turn ownership, deadlines, and in-game point spending are validated by the server.
 - Reconnect and disconnect behaviour is defined and not embarrassing.
 - Adding 300 ms of latency doesn't change who wins.
 - It doesn't leak hidden state through snapshots or spectator views.
@@ -374,12 +401,12 @@ Explicitly not in v1: multiple server instances, Redis, a database, surviving a 
 
 Everyone connects to one Socket.IO server. Whoever clicks "host a game" gets a room code and lobby controls; if they leave, someone else gets them and the match carries on.
 
-Five games run in the browser. The server hands out the round, waits for everyone to be ready, says go, and collects results. Latency never touches a measurement, which means no clock correction anywhere in the platform and very little networking in most of the catalogue.
+Four games run in the browser. The server hands out the round, waits for everyone to be ready, says go, and collects results. Latency never touches a measurement, which means no clock correction anywhere in the platform and very little networking in most of the catalogue.
 
-Four games run on the server, because players push each other off things and two browsers can't agree about that. Those use a tick loop, snapshots with interpolation, and local prediction for your own movement.
+Four shared-world games run on the server, because players share hazards, positions, or elimination timing and need one authoritative outcome. Those use a tick loop, snapshots with interpolation, and local prediction where movement is allowed.
 
-Liar's Deck runs on the server because the server has to be the only one holding the cards.
+Three turn-based games run on the server: Liar's Deck for private cards, Infinite Tic-Tac-Toe for the board and placement order, and Word Bomb for word validation, turn deadlines, and power-ups.
 
-Shared code is: the lobby, the competition runner, the self-timed round runner, one movement layer, and the per-game rules. Everything else is specific to a game.
+Shared code is: the lobby, the competition runner, the self-timed round runner, one shared-world layer, turn-based action handling, and the per-game rules. Everything else is specific to a game.
 
 Build the lobby first with fake games, then Stop the Clock, then work outward. By the fourth game most of what a new game needs already exists.

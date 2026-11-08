@@ -61,22 +61,22 @@ export const SELF_TIMED = {
      * How far ahead a start is scheduled once everyone is ready. Long enough to
      * absorb normal latency, short enough not to feel like a stall.
      *
-     * It is also the client's window to build up to the round before the
-     * countdown — Stop the Clock spins its target through it — so this is the
-     * knob for how long that reveal lasts.
+     * It is also the room's window to count the round in before handing the
+     * screen over to it.
      */
-    START_LEAD_MS: 3_000,
+    START_LEAD_MS: 4_500,
     /**
      * If someone never acknowledges the ready check we start without them
      * rather than hanging the room.
      */
     READY_CHECK_TIMEOUT_MS: 20_000,
     /**
-     * The visible "3, 2, 1" between the round starting and the clock actually
-     * running. The server does not start counting until it has elapsed, so a
-     * player's timing window is the same interval they were shown.
+     * The window the round owns before the clock runs, and which the server
+     * does not count against anyone: the game builds up in the first part of
+     * it — Stop the Clock spins its target — and the last part is the
+     * "get ready, set, start!" the client counts down.
      */
-    COUNTDOWN_MS: 3_000,
+    COUNTDOWN_MS: 7_500,
     /** Clients send progress at roughly this rate, purely for display. */
     PROGRESS_HZ: 5,
     /** Server-side floor on the gap between progress messages from one player. */

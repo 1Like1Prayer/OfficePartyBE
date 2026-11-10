@@ -59,7 +59,10 @@ export interface StopTheClockResult {
 }
 
 /** Faded (blind) in the last BLIND_ROUNDS rounds: with 4 rounds, rounds 3 and 4. */
-export const isBlindRound = ({ roundInGame, roundsPerGame }: RoundContext): boolean =>
+export const isBlindRound = ({
+    roundInGame,
+    roundsPerGame
+}: Pick<RoundContext, 'roundInGame' | 'roundsPerGame'>): boolean =>
     roundInGame > roundsPerGame - STOP_THE_CLOCK.BLIND_ROUNDS;
 
 /** Pick a whole-second target between minMs and the maximum. */

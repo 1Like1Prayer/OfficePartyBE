@@ -27,7 +27,7 @@ test('isBlindRound: 4 rounds -> rounds 1-2 normal, rounds 3-4 faded', () => {
 
 test('blind rounds target 4-8s in whole seconds', () => {
     for (let i = 0; i < 2000; i++) {
-        const round = createRoundData({ roundInGame: 4, roundsPerGame: 4 });
+        const round = createRoundData({ roundInGame: 4, roundsPerGame: 4, playerIds: [], attempt: 0 });
         assert.equal(round.blind, true);
         assert.ok(round.targetMs >= 4_000 && round.targetMs <= 8_000);
         assert.equal(round.targetMs % 1_000, 0);
@@ -37,7 +37,7 @@ test('blind rounds target 4-8s in whole seconds', () => {
 test('non-blind rounds target 2-8s in whole seconds', () => {
     const seen = new Set<number>();
     for (let i = 0; i < 2000; i++) {
-        const round = createRoundData({ roundInGame: 1, roundsPerGame: 4 });
+        const round = createRoundData({ roundInGame: 1, roundsPerGame: 4, playerIds: [], attempt: 0 });
         assert.equal(round.blind, false);
         assert.ok(round.targetMs >= 2_000 && round.targetMs <= 8_000);
         assert.equal(round.targetMs % 1_000, 0);

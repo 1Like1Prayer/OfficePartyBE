@@ -88,6 +88,8 @@ export class Room {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private round: SelfTimedRound<any, any> | null = null;
     private lastRoundView: RoundView | null = null;
+    /** Earliest server time the owner may skip the results screen. */
+    private skipAllowedAtMs = 0;
 
     private phaseTimer: NodeJS.Timeout | null = null;
     private destroyed = false;
@@ -471,8 +473,12 @@ export class Room {
 
         if (payload.isFinal) this.competition.award(payload.winnerId);
 
+        // The game's ending animation plays first; the results screen's own
+        // display time only starts once it is done.
+        const finishAnimationMs = this.round?.finishAnimationMs ?? 0;
+        const resultsDelayMs = finishAnimationMs + COMPETITION.RESULT_DISPLAY_MS;
         const nextRoundAtServerMs = payload.isFinal
-            ? monotonicNowMs() + COMPETITION.RESULT_DISPLAY_MS
+            ? monotonicNowMs() + resultsDelayMs
             : null;
 
         this.emitter.toRoom(ServerEvent.RoundResults, {
@@ -485,6 +491,9 @@ export class Room {
             decidedByCoinFlip: payload.decidedByCoinFlip,
             isFinal: payload.isFinal,
             scores: this.competition.scoreRows(),
+            advancing: payload.advancing,
+            stageBreakMs: payload.stageBreakMs,
+            finishAnimationMs,
             nextRoundAtServerMs
         });
 
@@ -496,10 +505,8 @@ export class Room {
 
         const described = this.round?.describe();
         this.lastRoundView = described ?? null;
-        this.setPhaseTimer(
-            () => this.advanceRound(),
-            COMPETITION.RESULT_DISPLAY_MS
-        );
+        this.skipAllowedAtMs = monotonicNowMs() + finishAnimationMs;
+        this.setPhaseTimer(() => this.advanceRound(), resultsDelayMs);
     }
 
     /** Owner's "skip the results screen" button. */
@@ -514,6 +521,10 @@ export class Room {
         }
         if (this.phase !== 'competition' || this.phaseTimer === null) {
             return fail('wrong_phase', 'Nothing to skip right now.');
+        }
+        // Don't let a skip cut the ending animation short.
+        if (monotonicNowMs() < this.skipAllowedAtMs) {
+            return fail('wrong_phase', 'Wait for the animation to finish.');
         }
         this.clearPhaseTimer();
         this.advanceRound();

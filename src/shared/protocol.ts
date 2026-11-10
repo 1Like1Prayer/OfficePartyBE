@@ -255,6 +255,18 @@ export interface RoundResultsPayload extends RoundEnvelope {
     /** True on the last attempt of the scoring round, i.e. a point was awarded. */
     isFinal: boolean;
     scores: ScoreRow[];
+    /**
+     * Set when the round goes on to another stage (e.g. heats -> final): the
+     * players who advance. Null when the round is finished or a tiebreaker follows.
+     */
+    advancing: string[] | null;
+    /** The pause before the next stage loads. Zero when there is no next stage. */
+    stageBreakMs: number;
+    /**
+     * Milliseconds clients have to play the ending animation before the
+     * results screen's own display time starts. Zero for most games.
+     */
+    finishAnimationMs: number;
     nextRoundAtServerMs: number | null;
 }
 

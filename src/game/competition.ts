@@ -10,6 +10,7 @@
 
 import { COMPETITION } from '../shared/constants';
 import { GAME_CATALOG, type GameId } from '../shared/games/catalog';
+import { shuffled } from '../shared/games/random';
 import type {
     LeaderboardPayload,
     LeaderboardRow,
@@ -24,16 +25,6 @@ export interface PlaylistError {
     code: 'invalid_playlist';
     message: string;
 }
-
-/** Fisher-Yates, on a copy. */
-const shuffled = <T>(items: readonly T[]): T[] => {
-    const copy = [...items];
-    for (let i = copy.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [copy[i], copy[j]] = [copy[j]!, copy[i]!];
-    }
-    return copy;
-};
 
 /**
  * Random mode picks up to five distinct games. It can only pick from games

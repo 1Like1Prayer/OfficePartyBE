@@ -5,11 +5,12 @@
   "license": "ISC",
   "author": "",
   "type": "commonjs",
-  "main": "dist/index.js",
+  "main": "dist/app.js",
   "scripts": {
     "test": "tsx --test \"src/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
+    "start": "node dist/app.js",
     "dev": "tsx watch src/app.ts"
   },
   "dependencies": {

@@ -77,6 +77,10 @@ export interface SelfTimedRoundOptions<TRound, TResult> {
     events: SelfTimedRoundEvents;
 }
 
+export type ActionOutcome =
+    | { ok: true; data: unknown }
+    | { ok: false; code: ErrorCode; message: string };
+
 export type SubmitOutcome =
     | { ok: true }
     | { ok: false; code: ErrorCode; message: string };
@@ -102,6 +106,8 @@ export class SelfTimedRound<TRound, TResult> {
     private ready = new Set<string>();
     private results = new Map<string, TResult>();
     private lastProgressAt = new Map<string, number>();
+    /** The newest progress each player sent, so a reconnecting client can catch up. */
+    private latestProgress = new Map<string, Record<string, number>>();
     private startAtServerMs: number | null = null;
     private readyDeadlineMs = 0;
     private timer: NodeJS.Timeout | null = null;
@@ -163,6 +169,7 @@ export class SelfTimedRound<TRound, TResult> {
         this.ready.clear();
         this.results.clear();
         this.lastProgressAt.clear();
+        this.latestProgress.clear();
         this.startAtServerMs = null;
 
         // Loading: the round data goes out and clients build whatever they need.
@@ -245,6 +252,34 @@ export class SelfTimedRound<TRound, TResult> {
         return { ok: true };
     }
 
+    /**
+     * A mid-round request the game answers itself (e.g. casting the dice).
+     * Stateless on the server's side: the game derives the reply from the round.
+     */
+    handleAction(
+        playerId: string,
+        attempt: number,
+        raw: unknown
+    ): ActionOutcome {
+        if (attempt !== this.attemptIndex) {
+            return { ok: false, code: 'stale_round', message: 'Action for a past attempt.' };
+        }
+        if (this.phase !== 'playing' || this.round === null) {
+            return { ok: false, code: 'wrong_phase', message: 'Round is not running.' };
+        }
+        if (!this.participants.has(playerId)) {
+            return { ok: false, code: 'not_in_room', message: 'Not playing this round.' };
+        }
+        if (this.module.handleAction === undefined) {
+            return { ok: false, code: 'invalid_payload', message: 'This game has no actions.' };
+        }
+
+        const reply = this.module.handleAction(this.round, playerId, raw);
+        return reply === null
+            ? { ok: false, code: 'invalid_payload', message: 'Malformed action.' }
+            : { ok: true, data: reply };
+    }
+
     /** Display-only, rate limited, and never allowed to affect the outcome. */
     submitProgress(playerId: string, attempt: number, raw: unknown): void {
         if (
@@ -264,6 +299,7 @@ export class SelfTimedRound<TRound, TResult> {
         if (progress === null) return;
 
         this.lastProgressAt.set(playerId, now);
+        this.latestProgress.set(playerId, progress);
         this.events.onProgress({
             roundId: this.roundId,
             attempt: this.attemptIndex,
@@ -529,7 +565,8 @@ export class SelfTimedRound<TRound, TResult> {
             resultTimeoutMs: this.module.resultTimeoutMs(this.round),
             gameIndex: this.gameIndex,
             totalGames: this.totalGames,
-            roundInGame: this.roundInGame
+            roundInGame: this.roundInGame,
+            progress: Object.fromEntries(this.latestProgress)
         };
     }
 }

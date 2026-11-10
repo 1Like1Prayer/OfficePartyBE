@@ -6,7 +6,7 @@
  */
 
 /** Bumped whenever a message shape changes. Mismatched clients are asked to reload. */
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 14;
 
 /**
  * Avatars are chosen by the player and drawn from a seed, never a URL. The
@@ -48,7 +48,7 @@ export const COMPETITION = {
      */
     /** How many games random mode picks (capped by how many are implemented). */
     RANDOM_PLAYLIST_SIZE: 5,
-    MAX_CUSTOM_PLAYLIST_SIZE: 10,
+    MAX_CUSTOM_PLAYLIST_SIZE: 9,
     /** How long the results screen shows before the next round starts. */
     RESULT_DISPLAY_MS: 6_000,
     /** How long the final leaderboard shows before the room returns to lobby. */

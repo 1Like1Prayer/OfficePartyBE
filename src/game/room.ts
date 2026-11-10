@@ -603,6 +603,21 @@ export class Room {
             : fail(outcome.code, outcome.message);
     }
 
+    /** A mid-round request the game answers, e.g. casting the dice. */
+    handleAction(
+        playerId: string,
+        roundId: number,
+        attempt: number,
+        payload: unknown
+    ): RoomResult<unknown> {
+        const round = this.requireRound(roundId);
+        if (!round.ok) return round;
+        const outcome = round.data.handleAction(playerId, attempt, payload);
+        return outcome.ok
+            ? { ok: true, data: outcome.data }
+            : fail(outcome.code, outcome.message);
+    }
+
     submitProgress(
         playerId: string,
         roundId: number,

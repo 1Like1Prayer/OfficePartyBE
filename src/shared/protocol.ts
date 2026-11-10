@@ -29,6 +29,8 @@ export const ClientEvent = {
     Ready: 'round:ready',
     Progress: 'round:progress',
     SubmitResult: 'round:result',
+    /** A mid-round request the game answers (e.g. casting the dice). */
+    RoundAction: 'round:action',
     Ping: 'time:ping'
 } as const;
 
@@ -211,6 +213,11 @@ export interface RoundDataPayload<TRound = unknown> extends RoundEnvelope {
     gameIndex: number;
     totalGames: number;
     roundInGame: number;
+    /**
+     * Only on a snapshot for a reconnecting client: the latest progress each
+     * player sent, so a shared progress display can be drawn straight away.
+     */
+    progress?: Record<string, Record<string, number>>;
 }
 
 export interface ReadyStatePayload extends RoundEnvelope {

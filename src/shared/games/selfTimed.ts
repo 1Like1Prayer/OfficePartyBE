@@ -95,6 +95,14 @@ export interface SelfTimedGameModule<TRound, TResult> {
     rank(entries: ResultEntry<TResult>[], round: TRound): RankedEntry[];
 
     /**
+     * Optional. Answer a request a player makes mid-round, for games where
+     * something must be decided by the server while the round is running (Type
+     * Racer Roulette's dice). Return the reply for the player, or null if the
+     * request is malformed.
+     */
+    handleAction?(round: TRound, playerId: string, raw: unknown): unknown | null;
+
+    /**
      * Optional. A different run-up for the opening attempt, decided from its
      * round data (e.g. heats get a longer intro than a plain race). Return
      * null to use the platform default.

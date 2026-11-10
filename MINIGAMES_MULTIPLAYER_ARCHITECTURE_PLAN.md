@@ -2,11 +2,11 @@
 
 ## 1. What this is
 
-A plan for ten browser-based minigames played by a small office group, running on a Node.js server with Socket.IO.
+A plan for nine browser-based minigames played by a small office group, running on a Node.js server with Socket.IO.
 
 The scale this is built for: up to 8 players in a room, a handful of rooms at once, everyone friendly. That scale rules out most of what a "real" multiplayer platform would need. There is no matchmaking, no accounts, no database, no scaling tier, no anti-cheat. Adding those later is possible; building them now would be most of the work for none of the fun.
 
-The goal is one shared foundation the games sit on, so that adding the tenth game is much less work than the first.
+The goal is one shared foundation the games sit on, so that adding the ninth game is much less work than the first.
 
 Games without supplied titles use working names:
 
@@ -15,13 +15,12 @@ Games without supplied titles use working names:
 | 1 | Minefield |
 | 2 | Cube Counter |
 | 3 | Crusher Escalator |
-| 4 | Blade Arena |
-| 5 | Stop the Clock |
-| 6 | Type Racer Roulette |
-| 7 | Liar's Deck |
-| 8 | Hidden Crossfire |
-| 9 | Log Dodge |
-| 10 | Word Bomb |
+| 4 | Stop the Clock |
+| 5 | Type Racer Roulette |
+| 6 | Liar's Deck |
+| 7 | Hidden Crossfire |
+| 8 | Log Dodge |
+| 9 | Word Bomb |
 
 ## 2. The core idea: three kinds of game
 
@@ -29,11 +28,11 @@ This is the decision everything else follows from.
 
 **Four games are played alone, together.** Stop the Clock, Cube Counter, Crusher Escalator, and Type Racer Roulette all have each player doing their own thing in their own space. Nothing you do affects my scene, my lane, or my timer. For these, **the browser runs the whole game and reports the result.** The server hands out the round data, waits for everyone to be ready, says go, and collects what comes back.
 
-**Four games use a shared world.** Blade Arena, Minefield, Hidden Crossfire, and Log Dodge share hazards, positions, or elimination timing. Two browsers cannot agree on who got hit, so the server runs those. Hidden Crossfire also keeps each player's aim private until the reveal; Log Dodge uses a fixed lineup rather than free movement.
+**Three games use a shared world.** Minefield, Hidden Crossfire, and Log Dodge share hazards, positions, or elimination timing. Two browsers cannot agree on who got hit, so the server runs those. Hidden Crossfire also keeps each player's aim private until the reveal; Log Dodge uses a fixed lineup rather than free movement.
 
 **Two games are turn-based.** Liar's Deck and Word Bomb use server-owned turns and validated actions rather than continuous movement. The server holds private cards in Liar's Deck, and manages word deadlines and power-ups in Word Bomb.
 
-So the work splits into: a lobby and result collector that four games share and which is mostly not networking at all, one real-time simulation layer for four shared-world games, and turn-based action handling for two games.
+So the work splits into: a lobby and result collector that four games share and which is mostly not networking at all, one real-time simulation layer for three shared-world games, and turn-based action handling for two games.
 
 ## 3. Stack
 
@@ -41,7 +40,7 @@ So the work splits into: a lobby and result collector that four games share and 
 
 **Client:** TypeScript, Socket.IO client, a UI framework (React or Svelte), and Three.js for the 3D games. `performance.now()` for local timing. Web Audio for sound.
 
-**Physics:** only the four shared-world games need collision rules, and they need very little. Use simple shapes — circles, boxes, capsules on a grid — and write the collision code by hand rather than pulling in a physics engine. A mine grid, a blade bouncing off walls, and a moving harvester are each a few dozen lines. Hidden Crossfire adds shot-line intersections; Log Dodge adds jump/duck collision windows. A physics engine would be more work to configure than to replace, and it would have to run on the server too.
+**Physics:** only the three shared-world games need collision rules, and they need very little. Use simple shapes — circles, boxes, capsules on a grid — and write the collision code by hand rather than pulling in a physics engine. A mine grid and a moving harvester are each a few dozen lines. Hidden Crossfire adds shot-line intersections; Log Dodge adds jump/duck collision windows. A physics engine would be more work to configure than to replace, and it would have to run on the server too.
 
 **JSON messages.** At 8 players and 15 snapshots a second, JSON is fine. Binary encoding is a real optimization but not one to do before there's a measured problem.
 
@@ -79,10 +78,10 @@ Configure the client with `transports: ['websocket']` to skip the long-polling h
 
 The owner picks a mode:
 
-- **Random** — the server picks 5 of the 10 games at random, no repeats, shuffled.
-- **Custom** — the owner picks 1 to 10 games in whatever order.
+- **Random** — the server picks 5 of the 9 games at random, no repeats, shuffled.
+- **Custom** — the owner picks 1 to 9 games in whatever order.
 
-**Each game decides how many scoring rounds it is played for.** Each scoring round has one winner and awards 1 point, so a game's round count is the most points it can hand out. Stop the Clock has 4 rounds (2 normal, then 2 faded); Crusher Escalator has 2; Cube Counter has 1. The owner does not set a round count. The total points in a competition is the sum of the chosen games' round counts.
+**Each game decides how many scoring rounds it is played for.** Each scoring round has one winner and awards 1 point, so a game's round count is the most points it can hand out. Stop the Clock has 4 rounds (2 normal, then 2 faded); Crusher Escalator and Type Racer Roulette have 2; Cube Counter has 1. The owner does not set a round count. The total points in a competition is the sum of the chosen games' round counts.
 
 The flow:
 
@@ -156,7 +155,7 @@ Build this once. Four games use it and only the "compare results" function diffe
 
 ### 8.2 Shared-world games
 
-The server runs a fixed tick — 30/second is a reasonable start — for the four shared-world games. Each tick it reads inputs, moves everything, checks collisions, and emits events. Snapshots go out at half the tick rate or so; they don't need to match it.
+The server runs a fixed tick — 30/second is a reasonable start — for the three shared-world games. Each tick it reads inputs, moves everything, checks collisions, and emits events. Snapshots go out at half the tick rate or so; they don't need to match it.
 
 Clients send input at 20-30 Hz, coalesced. Hold one pending input and replace it rather than queueing; a stale movement vector isn't worth sending.
 
@@ -268,11 +267,6 @@ If several players are crushed at the same instant and that would leave fewer th
 
 *Open:* whether the time cap should be shorter; whether a wrong press should cost more than a missed point; and whether the crusher should also creep forward on its own if the whole room stalls.
 
-### Blade Arena — shared
-Blades spawn from three holes and ricochet. Dodge. Server simulates blade motion and hits. Use swept collision so fast blades don't tunnel through players. Cap the blade count.
-
-This is the heaviest game in the set for both bandwidth and server CPU — build it last and measure it. Don't try to derive blade paths on the client from the seed; they'll drift apart.
-
 ### Stop the Clock — self-timed
 Hit a target between 2.00 and 8.00 seconds. Server sends the target and a start time; each client times itself and reports. Results stay hidden until everyone's in, then reveal together. Exact ties go to a tiebreaker among just those players.
 
@@ -281,9 +275,35 @@ It is played for **4 scoring rounds**: rounds 1–2 are normal, and in rounds 3�
 The simplest game in the set, and the right one to build first.
 
 ### Type Racer Roulette — self-timed, with one round trip
-Race through a text. Three mistakes triggers an elimination roll; survive and the odds get worse. The client validates typing locally so every keystroke is instant, and reports progress at a low rate. When it hits the third mistake it pauses and asks the server, which rolls and replies — keeping the outcome a genuine surprise. The pause makes that round trip feel deliberate rather than laggy.
+A typing race with a deadly twist. A round is **4 or 5 paragraphs** (1 or 2 easy warm-up paragraphs, then 3 hard ones), the same for every player, and each paragraph is a few lines. The first player to finish every paragraph wins, and if everyone else is knocked out first, the last survivor wins.
 
-*Open:* case sensitivity, punctuation, unicode normalization, whether backspace repairs errors, whether paste counts. Put these rules in `shared/` so client and server agree by construction.
+**Mistakes.** A wrong key is a mistake at once: the player goes back to the **start of that line** and the paragraph gains **1 strike**. Matching is exact (case, punctuation and spaces count), backspace doesn't repair a mistake, and pasting isn't accepted. Text is plain ASCII, so there is no Unicode normalisation to argue about. These rules live in `shared/` so client and server agree by construction.
+
+**The texts.** A race eases players in and then gets hard: **1 or 2 easy paragraphs first, then 3 hard ones**, so 4 or 5 paragraphs in all, the same for every player.
+- **Easy pool (5 paragraphs):** short, simple words about everyday things (a dog in the park, a rainy day, a cat, the beach, a Saturday market) with almost no punctuation, only the odd comma and full stop. A race takes 1 or 2 of them at random, in random order.
+- **Hard pool (20 paragraphs in six categories):** field notes (numbers, colons, dashes, coordinates), alphabets (A - apple, B - banana, ...), word salad with broken grammar, long words with spelling mistakes left in on purpose, text with no spaces at all, and everyday oddities (dialogue, a recipe, a captain's log). Between them they use every punctuation mark , . ! ? : - and the apostrophe. A race picks 3 different categories at random, in random order (a proper shuffle, so any category can come first or last), and then one random paragraph from each, so the hard part is always a mix and never three of the same kind.
+
+**The dice.** On the **third strike in a paragraph** a six-sided die is cast, with hearts on every side except one skull. Land on the skull and the player is out. Survive, and the player drops back to **two strikes**, so one more mistake casts the die again, and **each time the die is cast and survived it gains another skull side**: 5 hearts and 1 skull, then 4 and 2, then 3 and 3, then 2 and 4, then 1 and 5, up to a die of all skulls (the cap is 6, like a regular die). The sixth roll is therefore certain death, so a player can survive at most five rolls. Finishing a paragraph resets the strikes to 0, but the skull count is **not** reset; it carries on for the rest of the race.
+
+**Last survivor.** The first player to finish wins, but a race can also end without a finisher: when every player except one has been knocked out (by a skull or by running out of time), **the last survivor wins**, even if they are only a few lines in. The race is over from the moment the last other player falls, so nothing the survivor does afterwards counts against them. If the last two fall at the same instant, or everyone falls, there is no survivor and the furthest player is best, as below. Clients show the others as out in the shared bar (the progress `status`), and once a player sees that everyone else is out they stop and report.
+
+**Pause between paragraphs.** After each paragraph (but not after the last) there is a **7-second pause** for a brief break and animations. Typing is closed during it, and it counts toward every player's finish time equally, so it never changes who finishes first. Skipping the pause isn't possible: a press made during it is ignored by the server's replay.
+
+**Time limit.** Every paragraph has a **3-minute counter**. It starts when typing on that paragraph opens (for the first, when the race starts; for the others, when the 7-second pause ends). A player who hasn't finished the paragraph by then is out.
+
+**How it stays self-timed.** The browser validates typing locally so every key press is instant, and reports what happened with timestamps: each mistake and each finished line. The server **replays** that list against the rules, applying strikes, rolling the dice and checking the 3-minute limit, so a client cannot simply claim a result. Players never affect each other, so each player is replayed on their own.
+
+**The shared progress bar.** One bar shows every player. It has **one section per paragraph, with a checkpoint at the end of each**. Every character in the race takes the same width, so the sections are **uneven**: a short paragraph gets a short section and its checkpoint appears earlier on the bar. Within a section the paragraph's characters are the whole 100%, and every character a player has typed correctly is one equal part of it. A mistake sends the player back to the start of their line, so their marker steps back by that line's characters. Clients report their progress at low rate: the number of correct characters typed in the whole race, the paragraph they are in, their strikes and skull count, and whether they are typing, finished or out. The server checks it stays inside the race and broadcasts it. It also remembers each player's latest progress, so a client that reconnects mid-race is sent everyone's position at once instead of waiting for the next update. The functions that turn characters into a bar position live in `shared/`, so the bar and the final result agree: the server counts the characters in a player's finished lines when it replays the race, and that is also how it orders players who did not finish.
+
+**The one round trip.** The outcome of a die must stay a surprise, so at the third strike the client pauses and asks the server (`round:action`, `{ type: 'roll', rollIndex }`). The server replies with the face and how many sides were skulls. Each roll is derived from a server-only secret, the round's public nonce, the player and the roll number, so the server can answer mid-race and later replay the same dice without storing anything per player. The pause makes the round trip feel deliberate rather than laggy. There is no anti-cheat: a client could ask about a future roll, which the plan accepts for a friendly office game.
+
+**Ranking.** Players who finish are ranked by finish time; then everyone else by how many characters they got through, and for the same distance, by who lasted longer. So if nobody finishes, the player who got furthest is best. Finishing at the same millisecond is a tie, and goes to the usual tiebreaker. A player who closes the tab simply stops reporting.
+
+**Celebration.** When a race is decided, the server gives clients **5 seconds** for a quick celebration animation (the winner, whether by finishing or as last survivor) before the results screen's normal display time and the next round. It is the same per-game `finishAnimationMs` setting Crusher Escalator uses, and the owner can't skip the results screen until it has finished.
+
+**Rounds.** Two scoring rounds per game, each with a fresh set of paragraphs, so a game awards at most 2 points. Each paragraph's limit is a ceiling, not a target: a typical paragraph takes well under it.
+
+*Open:* how long the paragraphs should be, whether the time limit should be shorter, and whether a first finisher should end the race for everyone else immediately or let the others play on for ranking.
 
 ### Liar's Deck — shared, turn-based
 Private hands, a declared rank, face-down plays, challenges. Server shuffles, deals to individual sockets, validates turns, reveals on challenge, applies penalties. Broadcast the public table after every action.
@@ -347,13 +367,13 @@ One bit of self-protection is worth having: bound message sizes and entity count
 
 ## 14. Testing
 
-**Game rules as plain functions.** Everything in `shared/games/` should be testable by calling it — no sockets, no rendering, no clock. Block-scene generation (no overlaps, nothing fully hidden, count matches the box list), answer scoring and tiebreaks, mine collisions, typing validation, blade bounces, scoring. This is where most of the value is.
+**Game rules as plain functions.** Everything in `shared/games/` should be testable by calling it — no sockets, no rendering, no clock. Block-scene generation (no overlaps, nothing fully hidden, count matches the box list), answer scoring and tiebreaks, mine collisions, typing validation, scoring. This is where most of the value is.
 
 **New game rules.** Check that Hidden Crossfire never exposes another player's aim before the reveal and resolves shots from one frozen state; Log Dodge judges jump/duck windows consistently; and Word Bomb handles valid words, point spending, reversed turns, targeted four-letter combinations, next-turn revolvers, and extra time without double activation.
 
 **The self-timed round runner.** Four games depend on it, so test: everyone reports; someone doesn't; nobody does; duplicate reports; exact ties; a late ready check pushing the start back; a result arriving after the round closed.
 
-**The competition layer**, with fake games standing in: random picks 5 unique, custom keeps order, per-game round counts (Stop the Clock 4, Crusher Escalator 2, Cube Counter 1), one point per round, scores survive game changes and reconnects, leaderboard sorts and handles ties, a new competition clears the old one.
+**The competition layer**, with fake games standing in: random picks 5 unique, custom keeps order, per-game round counts (Stop the Clock 4, Crusher Escalator 2, Type Racer Roulette 2, Cube Counter 1), one point per round, scores survive game changes and reconnects, leaderboard sorts and handles ties, a new competition clears the old one.
 
 **Latency.** The one test worth writing specifically: a client with 300 ms added latency should get an identical result to one with none in every self-timed game. If latency changes a Stop the Clock outcome, timing has leaked into the network layer.
 
@@ -389,7 +409,7 @@ One bit of self-protection is worth having: bound message sizes and entity count
 
 **5. Movement layer.** The first real netcode: tick loop, input, snapshots, interpolation, prediction. Test this under packet loss, not just latency.
 
-**6. Minefield, Log Dodge, Hidden Crossfire, then Blade Arena.** Reuse the shared-world layer. Log Dodge adds discrete jump/duck actions; Hidden Crossfire adds private aim, freeze/reveal phases, and shrinking bounds. Blade Arena last since it sets the performance ceiling.
+**6. Minefield, Log Dodge, then Hidden Crossfire.** Reuse the shared-world layer. Log Dodge adds discrete jump/duck actions; Hidden Crossfire adds private aim, freeze/reveal phases, and shrinking bounds.
 
 **7. Crusher Escalator.** The client runs its own race, so the work is press handling, the crusher display and the server-side replay, not live networking. Could move earlier if someone wants to build it.
 
@@ -415,10 +435,10 @@ Ship this:
 
 - 2-8 players, one server, no database.
 - Room codes, owner with automatic transfer.
-- Both playlist modes, per-game round counts (Stop the Clock 4, Crusher Escalator 2, Cube Counter 1), one point per round, leaderboard at the end.
+- Both playlist modes, per-game round counts (Stop the Clock 4, Crusher Escalator 2, Type Racer Roulette 2, Cube Counter 1), one point per round, leaderboard at the end.
 - Three games: **Stop the Clock, Cube Counter, Liar's Deck.**
 
-Those three cover self-timed games, turn-based games, and private state. The remaining seven add game logic; Minefield, Blade Arena, Hidden Crossfire, and Log Dodge also need the shared-world simulation layer.
+Those three cover self-timed games, turn-based games, and private state. The remaining six add game logic; Minefield, Hidden Crossfire, and Log Dodge also need the shared-world simulation layer.
 
 Explicitly not in v1: multiple server instances, Redis, a database, surviving a restart, accounts, matchmaking, delta compression, binary encoding, spectators if they turn out to be fiddly.
 
@@ -442,7 +462,7 @@ Everyone connects to one Socket.IO server. Whoever clicks "host a game" gets a r
 
 Four games run in the browser. The server hands out the round, waits for everyone to be ready, says go, and collects results. Latency never touches a measurement, which means no clock correction anywhere in the platform and very little networking in most of the catalogue.
 
-Four shared-world games run on the server, because players share hazards, positions, or elimination timing and need one authoritative outcome. Those use a tick loop, snapshots with interpolation, and local prediction where movement is allowed.
+Three shared-world games run on the server, because players share hazards, positions, or elimination timing and need one authoritative outcome. Those use a tick loop, snapshots with interpolation, and local prediction where movement is allowed.
 
 Two turn-based games run on the server: Liar's Deck for private cards, and Word Bomb for word validation, turn deadlines, and power-ups.
 

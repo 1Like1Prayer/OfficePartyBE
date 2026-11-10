@@ -1,5 +1,5 @@
 /**
- * The ten games and what kind each one is. Only games marked `implemented`
+ * The nine games, in the order the plan lists them, and what kind each one is. Only games marked `implemented`
  * can appear in a playlist; the rest are here so the client can show the
  * full catalogue and so playlist code doesn't need a second list.
  */
@@ -8,13 +8,12 @@ export const GAME_IDS = [
     'minefield',
     'cube-counter',
     'crusher-escalator',
-    'safe-tile-arena',
-    'pea-dinner',
-    'train-alcoves',
-    'blade-arena',
     'stop-the-clock',
     'type-racer-roulette',
-    'liars-deck'
+    'liars-deck',
+    'hidden-crossfire',
+    'log-dodge',
+    'word-bomb'
 ] as const;
 
 export type GameId = (typeof GAME_IDS)[number];
@@ -33,13 +32,12 @@ export const GAME_CATALOG: Record<GameId, GameMeta> = {
     'minefield': { id: 'minefield', title: 'Minefield', kind: 'shared-world', implemented: false },
     'cube-counter': { id: 'cube-counter', title: 'Cube Counter', kind: 'self-timed', implemented: true },
     'crusher-escalator': { id: 'crusher-escalator', title: 'Crusher Escalator', kind: 'self-timed', implemented: true },
-    'safe-tile-arena': { id: 'safe-tile-arena', title: 'Safe Tile Arena', kind: 'shared-world', implemented: false },
-    'pea-dinner': { id: 'pea-dinner', title: 'Pea Dinner', kind: 'self-timed', implemented: false },
-    'train-alcoves': { id: 'train-alcoves', title: 'Train Alcoves', kind: 'shared-world', implemented: false },
-    'blade-arena': { id: 'blade-arena', title: 'Blade Arena', kind: 'shared-world', implemented: false },
     'stop-the-clock': { id: 'stop-the-clock', title: 'Stop the Clock', kind: 'self-timed', implemented: true },
-    'type-racer-roulette': { id: 'type-racer-roulette', title: 'Type Racer Roulette', kind: 'self-timed', implemented: false },
-    'liars-deck': { id: 'liars-deck', title: "Liar's Deck", kind: 'turn-based', implemented: false }
+    'type-racer-roulette': { id: 'type-racer-roulette', title: 'Type Racer Roulette', kind: 'self-timed', implemented: true },
+    'liars-deck': { id: 'liars-deck', title: "Liar's Deck", kind: 'turn-based', implemented: false },
+    'hidden-crossfire': { id: 'hidden-crossfire', title: 'Hidden Crossfire', kind: 'shared-world', implemented: false },
+    'log-dodge': { id: 'log-dodge', title: 'Log Dodge', kind: 'shared-world', implemented: false },
+    'word-bomb': { id: 'word-bomb', title: 'Word Bomb', kind: 'turn-based', implemented: false }
 };
 
 export const isGameId = (value: unknown): value is GameId =>

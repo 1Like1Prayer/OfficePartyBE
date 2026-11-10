@@ -50,7 +50,7 @@ const joinSchema = z.object({
 const setNameSchema = z.object({ name: z.string().max(ROOM.MAX_NAME_LENGTH * 4) });
 const setModeSchema = z.object({
     mode: z.enum(['random', 'custom']),
-    gameIds: z.array(gameIdSchema).max(10).optional()
+    gameIds: z.array(gameIdSchema).max(COMPETITION.MAX_CUSTOM_PLAYLIST_SIZE).optional()
 });
 const setReadySchema = z.object({ ready: z.boolean() });
 const roundEnvelopeSchema = z.object({
@@ -60,6 +60,10 @@ const roundEnvelopeSchema = z.object({
 const resultSchema = roundEnvelopeSchema.extend({
     /** Game-specific and validated by the game module, not here. */
     result: z.unknown()
+});
+const actionSchema = roundEnvelopeSchema.extend({
+    /** Game-specific and validated by the game module, not here. */
+    action: z.unknown()
 });
 const progressSchema = roundEnvelopeSchema.extend({ progress: z.unknown() });
 
@@ -301,6 +305,30 @@ export const registerGameNamespace = (namespace: Namespace): void => {
                         membership.playerId,
                         parsed.data.roundId,
                         parsed.data.attempt
+                    )
+                )
+            );
+        });
+
+        handle(ClientEvent.RoundAction, (payload, ack) => {
+            const membership = requireMembership();
+            if ('ok' in membership) {
+                respond(ack, membership);
+                return;
+            }
+            const parsed = actionSchema.safeParse(payload);
+            if (!parsed.success) {
+                respond(ack, err('invalid_payload', 'Bad action payload.'));
+                return;
+            }
+            respond(
+                ack,
+                toAck(
+                    membership.room.handleAction(
+                        membership.playerId,
+                        parsed.data.roundId,
+                        parsed.data.attempt,
+                        parsed.data.action
                     )
                 )
             );

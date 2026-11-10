@@ -26,6 +26,35 @@ export interface RoundContext {
     /** 1-based round within the game. */
     roundInGame: number;
     roundsPerGame: number;
+    /**
+     * The players this attempt is for. Games that give each player their own
+     * content (Crusher Escalator's arrow streams) build it from this; a
+     * tiebreaker attempt lists only the tied players.
+     */
+    playerIds: readonly string[];
+    /** 0 for the opening attempt; later attempts are stages or tiebreakers. */
+    attempt: number;
+}
+
+/** How long the run-up to an attempt's start lasts. */
+export interface AttemptTiming {
+    /** How far ahead the start is scheduled once everyone is ready. */
+    startLeadMs: number;
+    /** The "3, 2, 1" the clients show before the clock runs. */
+    countdownMs: number;
+}
+
+/**
+ * A game with stages (heats, then a final) asks the runner for another
+ * attempt with a new set of players, instead of waiting for a tie.
+ */
+export interface StageAdvance {
+    /** Who plays the next stage. */
+    participants: string[];
+    /** Pause between the stage ending and the next one loading. */
+    pauseMs: number;
+    /** Run-up for the next stage, if it should differ from the usual. */
+    timing?: AttemptTiming;
 }
 
 export interface SelfTimedGameModule<TRound, TResult> {
@@ -39,6 +68,13 @@ export interface SelfTimedGameModule<TRound, TResult> {
      * Counter's puzzles) still counts as one scoring round.
      */
     readonly roundsPerGame: number;
+
+    /**
+     * How long clients get to play the game's ending animation once a round is
+     * decided, before the results screen runs its normal course and the next
+     * round is scheduled. Omit for games that need none.
+     */
+    readonly finishAnimationMs?: number;
 
     /** Public round data. Must contain nothing a player shouldn't see. */
     createRoundData(context: RoundContext): TRound;
@@ -57,4 +93,18 @@ export interface SelfTimedGameModule<TRound, TResult> {
      * and the runner will send them to a tiebreaker.
      */
     rank(entries: ResultEntry<TResult>[], round: TRound): RankedEntry[];
+
+    /**
+     * Optional. A different run-up for the opening attempt, decided from its
+     * round data (e.g. heats get a longer intro than a plain race). Return
+     * null to use the platform default.
+     */
+    openingTiming?(round: TRound): AttemptTiming | null;
+
+    /**
+     * Optional. After ranking an attempt, say whether the scoring round goes
+     * on to another stage. Checked before the tie rule, so a stage advance is
+     * never mistaken for a tie. Return null to finish the round.
+     */
+    nextStage?(ranked: RankedEntry[], round: TRound): StageAdvance | null;
 }

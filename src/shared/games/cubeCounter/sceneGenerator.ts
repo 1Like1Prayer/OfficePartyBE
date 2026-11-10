@@ -7,6 +7,7 @@
  * tower, say) are thrown away and regenerated.
  */
 
+import { randomInt, type RandomSource } from '../random';
 import { CUBE_COUNTER } from './constants';
 import type { DifficultyProfile } from './difficulty';
 import { difficultyForPuzzle } from './difficulty';
@@ -16,18 +17,12 @@ import type { Box, Puzzle } from './types';
 
 const { GRID_SIZE } = CUBE_COUNTER;
 
-/** Returns a number in [0, 1), like Math.random. Injectable so tests are repeatable. */
-export type RandomSource = () => number;
-
 /** A scene that always satisfies every rule; the last resort for a one-box request. */
 const FALLBACK_BOXES: readonly Box[] = [
     { x: 0, y: 0, z: 0, width: 1, depth: 1 },
     { x: 2, y: 0, z: 0, width: 1, depth: 1 },
     { x: 4, y: 0, z: 0, width: 1, depth: 1 }
 ];
-
-const randomInt = (random: RandomSource, min: number, max: number): number =>
-    min + Math.floor(random() * (max - min + 1));
 
 const pickFootprint = (
     profile: DifficultyProfile,

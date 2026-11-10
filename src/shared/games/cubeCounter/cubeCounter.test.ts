@@ -5,7 +5,8 @@ import { difficultyForPuzzle } from './difficulty';
 import { findStructureProblem } from './geometry';
 import { cubeCounterModule } from './module';
 import { parseCubeCounterProgress, parseCubeCounterResult } from './parsing';
-import { generatePuzzles, generateScene, type RandomSource } from './sceneGenerator';
+import type { RandomSource } from '../random';
+import { generatePuzzles, generateScene } from './sceneGenerator';
 import { countBlocks, findSceneProblem } from './sceneValidation';
 import { compareScores, scoreResult } from './scoring';
 import type { Answer, Box, CubeCounterResult, Puzzle } from './types';
@@ -138,12 +139,12 @@ test('hard puzzles really do contain big boxes and stacks', () => {
 
 test('Cube Counter is one scoring round of consecutive puzzles', () => {
     assert.equal(cubeCounterModule.roundsPerGame, 1);
-    const round = cubeCounterModule.createRoundData({ roundInGame: 1, roundsPerGame: 1 });
+    const round = cubeCounterModule.createRoundData({ roundInGame: 1, roundsPerGame: 1, playerIds: [], attempt: 0 });
     assert.equal(round.puzzles.length, CUBE_COUNTER.PUZZLES_PER_ROUND);
 });
 
 test('puzzles differ in size and composition across the round', () => {
-    const { puzzles } = cubeCounterModule.createRoundData({ roundInGame: 1, roundsPerGame: 1 });
+    const { puzzles } = cubeCounterModule.createRoundData({ roundInGame: 1, roundsPerGame: 1, playerIds: [], attempt: 0 });
     const counts = puzzles.map((puzzle) => puzzle.boxes.length);
     assert.ok(new Set(counts).size > 1);
     assert.ok(counts[counts.length - 1]! > counts[0]!);
@@ -280,7 +281,7 @@ test('parseProgress accepts 0..puzzleCount and nothing else', () => {
 });
 
 test('createRoundData sends scenes only, never an answer key', () => {
-    const data = cubeCounterModule.createRoundData({ roundInGame: 1, roundsPerGame: 2 });
+    const data = cubeCounterModule.createRoundData({ roundInGame: 1, roundsPerGame: 2, playerIds: [], attempt: 0 });
     assert.deepEqual(Object.keys(data), ['puzzles']);
     for (const puzzle of data.puzzles) {
         assert.deepEqual(Object.keys(puzzle).sort(), ['boxes', 'flashMs']);

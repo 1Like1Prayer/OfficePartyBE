@@ -16,9 +16,11 @@
 
 import { SELF_TIMED } from '../shared/constants';
 import type {
+    AttemptTiming,
     RankedEntry,
     ResultEntry,
-    SelfTimedGameModule
+    SelfTimedGameModule,
+    StageAdvance
 } from '../shared/games/selfTimed';
 import type { GameId } from '../shared/games/catalog';
 import type {
@@ -34,6 +36,11 @@ import { monotonicNowMs } from './clock';
 /** How long the "it's a tie" screen shows before the tiebreaker begins. */
 const TIEBREAK_DELAY_MS = 4_000;
 
+const DEFAULT_TIMING: AttemptTiming = {
+    startLeadMs: SELF_TIMED.START_LEAD_MS,
+    countdownMs: SELF_TIMED.COUNTDOWN_MS
+};
+
 export interface AttemptResolved {
     roundId: number;
     attempt: number;
@@ -42,6 +49,10 @@ export interface AttemptResolved {
     noShow: string[];
     winnerId: string | null;
     decidedByCoinFlip: boolean;
+    /** The players going on to the next stage, if the game has one. */
+    advancing: string[] | null;
+    /** Pause before the next stage loads. Zero when there is no next stage. */
+    stageBreakMs: number;
     /** False when a tie sent this round to another attempt. */
     isFinal: boolean;
 }
@@ -84,6 +95,8 @@ export class SelfTimedRound<TRound, TResult> {
     private phase: RoundPhase = 'idle';
     private attemptIndex = 0;
     private isTiebreak = false;
+    private tiebreakersRun = 0;
+    private timing: AttemptTiming = DEFAULT_TIMING;
     private round: TRound | null = null;
     private participants = new Set<string>();
     private ready = new Set<string>();
@@ -105,6 +118,11 @@ export class SelfTimedRound<TRound, TResult> {
         this.events = options.events;
     }
 
+    /** Time clients need to play this game's ending animation. Zero if it has none. */
+    get finishAnimationMs(): number {
+        return this.module.finishAnimationMs ?? 0;
+    }
+
     /* -------------------------------------------------------------- */
     /* Lifecycle                                                        */
     /* -------------------------------------------------------------- */
@@ -121,7 +139,11 @@ export class SelfTimedRound<TRound, TResult> {
         this.phase = 'idle';
     }
 
-    private startAttempt(attempt: number, isTiebreak: boolean): void {
+    private startAttempt(
+        attempt: number,
+        isTiebreak: boolean,
+        timingOverride?: AttemptTiming
+    ): void {
         if (this.cancelled) return;
 
         this.attemptIndex = attempt;
@@ -130,8 +152,14 @@ export class SelfTimedRound<TRound, TResult> {
         // and gets a fresh target.
         this.round = this.module.createRoundData({
             roundInGame: this.roundInGame,
-            roundsPerGame: this.roundsPerGame
+            roundsPerGame: this.roundsPerGame,
+            playerIds: [...this.participants],
+            attempt
         });
+        this.timing =
+            timingOverride ??
+            (attempt === 0 ? this.module.openingTiming?.(this.round) : null) ??
+            DEFAULT_TIMING;
         this.ready.clear();
         this.results.clear();
         this.lastProgressAt.clear();
@@ -292,17 +320,17 @@ export class SelfTimedRound<TRound, TResult> {
         this.clearTimer();
         this.phase = 'starting';
         const now = monotonicNowMs();
-        this.startAtServerMs = now + SELF_TIMED.START_LEAD_MS;
+        this.startAtServerMs = now + this.timing.startLeadMs;
         this.events.onStartAt({
             roundId: this.roundId,
             attempt: this.attemptIndex,
             startAtServerMs: this.startAtServerMs,
-            countdownMs: SELF_TIMED.COUNTDOWN_MS,
+            countdownMs: this.timing.countdownMs,
             timingStartsAtServerMs:
-                this.startAtServerMs + SELF_TIMED.COUNTDOWN_MS,
+                this.startAtServerMs + this.timing.countdownMs,
             serverTimeMs: now
         });
-        this.setTimer(() => this.beginCountdown(), SELF_TIMED.START_LEAD_MS);
+        this.setTimer(() => this.beginCountdown(), this.timing.startLeadMs);
     }
 
     /**
@@ -330,7 +358,7 @@ export class SelfTimedRound<TRound, TResult> {
     private beginCountdown(): void {
         if (this.phase !== 'starting' || this.round === null) return;
         this.phase = 'countdown';
-        this.setTimer(() => this.beginPlaying(), SELF_TIMED.COUNTDOWN_MS);
+        this.setTimer(() => this.beginPlaying(), this.timing.countdownMs);
     }
 
     private beginPlaying(): void {
@@ -353,32 +381,85 @@ export class SelfTimedRound<TRound, TResult> {
         const noShow = this.pendingPlayers();
         const leaders = ranked.filter((row) => row.rank === 1).map((r) => r.playerId);
 
-        const canRetry =
-            leaders.length > 1 &&
-            this.attemptIndex + 1 < SELF_TIMED.MAX_TIEBREAK_ATTEMPTS;
-
-        if (canRetry) {
-            // A tie is the game's business: run another attempt among just
-            // those players and still hand back one winner.
-            this.events.onAttemptResolved({
-                roundId: this.roundId,
-                attempt: this.attemptIndex,
-                isTiebreak: this.isTiebreak,
-                ranked,
-                noShow,
-                winnerId: null,
-                decidedByCoinFlip: false,
-                isFinal: false
-            });
-            const tied = [...leaders];
-            const nextAttempt = this.attemptIndex + 1;
-            this.setTimer(() => {
-                this.participants = new Set(tied);
-                this.startAttempt(nextAttempt, true);
-            }, TIEBREAK_DELAY_MS);
+        // A stage advance comes first, so it is never mistaken for a tie.
+        const stage = this.module.nextStage?.(ranked, this.round) ?? null;
+        if (stage !== null) {
+            this.advanceToNextStage(ranked, noShow, stage);
             return;
         }
 
+        const canRetry =
+            leaders.length > 1 &&
+            this.tiebreakersRun < SELF_TIMED.MAX_TIEBREAK_ATTEMPTS - 1;
+        if (canRetry) {
+            this.runTiebreaker(ranked, noShow, leaders);
+            return;
+        }
+
+        this.finishRound(ranked, noShow, leaders);
+    }
+
+    /** The game has more stages (e.g. heats, then a final): go on with the chosen players. */
+    private advanceToNextStage(
+        ranked: RankedEntry[],
+        noShow: string[],
+        stage: StageAdvance
+    ): void {
+        this.events.onAttemptResolved({
+            roundId: this.roundId,
+            attempt: this.attemptIndex,
+            isTiebreak: this.isTiebreak,
+            ranked,
+            noShow,
+            winnerId: null,
+            decidedByCoinFlip: false,
+            advancing: stage.participants,
+            stageBreakMs: stage.pauseMs,
+            isFinal: false
+        });
+
+        const nextAttempt = this.attemptIndex + 1;
+        this.setTimer(() => {
+            this.participants = new Set(stage.participants);
+            this.startAttempt(nextAttempt, false, stage.timing);
+        }, stage.pauseMs);
+    }
+
+    /**
+     * A tie is the game's business: run another attempt among just the tied
+     * players and still hand back one winner.
+     */
+    private runTiebreaker(
+        ranked: RankedEntry[],
+        noShow: string[],
+        tied: string[]
+    ): void {
+        this.events.onAttemptResolved({
+            roundId: this.roundId,
+            attempt: this.attemptIndex,
+            isTiebreak: this.isTiebreak,
+            ranked,
+            noShow,
+            winnerId: null,
+            decidedByCoinFlip: false,
+            advancing: null,
+            stageBreakMs: 0,
+            isFinal: false
+        });
+
+        this.tiebreakersRun += 1;
+        const nextAttempt = this.attemptIndex + 1;
+        this.setTimer(() => {
+            this.participants = new Set(tied);
+            this.startAttempt(nextAttempt, true);
+        }, TIEBREAK_DELAY_MS);
+    }
+
+    private finishRound(
+        ranked: RankedEntry[],
+        noShow: string[],
+        leaders: string[]
+    ): void {
         let winnerId: string | null = null;
         let decidedByCoinFlip = false;
         if (leaders.length === 1) {
@@ -397,6 +478,8 @@ export class SelfTimedRound<TRound, TResult> {
             noShow,
             winnerId,
             decidedByCoinFlip,
+            advancing: null,
+            stageBreakMs: 0,
             isFinal: true
         });
     }

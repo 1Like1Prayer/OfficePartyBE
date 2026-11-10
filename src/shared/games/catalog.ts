@@ -32,7 +32,7 @@ export interface GameMeta {
 export const GAME_CATALOG: Record<GameId, GameMeta> = {
     'minefield': { id: 'minefield', title: 'Minefield', kind: 'shared-world', implemented: false },
     'cube-counter': { id: 'cube-counter', title: 'Cube Counter', kind: 'self-timed', implemented: true },
-    'crusher-escalator': { id: 'crusher-escalator', title: 'Crusher Escalator', kind: 'self-timed', implemented: false },
+    'crusher-escalator': { id: 'crusher-escalator', title: 'Crusher Escalator', kind: 'self-timed', implemented: true },
     'safe-tile-arena': { id: 'safe-tile-arena', title: 'Safe Tile Arena', kind: 'shared-world', implemented: false },
     'pea-dinner': { id: 'pea-dinner', title: 'Pea Dinner', kind: 'self-timed', implemented: false },
     'train-alcoves': { id: 'train-alcoves', title: 'Train Alcoves', kind: 'shared-world', implemented: false },

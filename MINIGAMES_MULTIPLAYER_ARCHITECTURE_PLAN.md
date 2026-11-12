@@ -27,13 +27,13 @@ Games without supplied titles use working names:
 
 This is the decision everything else follows from.
 
-**Five games are played alone, together.** Stop the Clock, Cube Counter, Crusher Escalator, Type Racer Roulette, and Log Dodge (its logs follow a fixed timed schedule, so there is no physics to agree on) all have each player doing their own thing in their own space. Nothing you do affects my scene, my lane, or my timer. For these, **the browser runs the whole game and reports the result.** The server hands out the round data, waits for everyone to be ready, says go, and collects what comes back.
+**Six games are played alone, together.** Stop the Clock, Cube Counter, Crusher Escalator, Type Racer Roulette, Log Dodge (its logs follow a fixed timed schedule, so there is no physics to agree on), and Minefield (each runner crosses the same field alone, and the server replays their inputs) all have each player doing their own thing in their own space. Nothing you do affects my scene, my lane, or my timer. For these, **the browser runs the whole game and reports the result.** The server hands out the round data, waits for everyone to be ready, says go, and collects what comes back.
 
-**Three games use a shared world.** Minefield, Hidden Crossfire, and Hexa-Gone share hazards, positions, or the floor itself. Two browsers cannot agree on who got hit or who stepped on a tile first, so the server runs those. Hidden Crossfire also keeps each player's aim private until the reveal.
+**Two games use a shared world.** Hidden Crossfire and Hexa-Gone share positions or the floor itself. Two browsers cannot agree on who got hit or who stepped on a tile first, so the server runs those. Hidden Crossfire also keeps each player's aim private until the reveal.
 
 **Two games are not settled yet.** Mage Battle (quick-time events against a boss monster) and Wall Climbers (rules to be announced) are provisionally treated as self-timed. Mage Battle moves to the shared-world layer if players fight one boss together instead of each facing their own. Neither is implemented, and the catalogue marks both as provisional.
 
-So the work splits into: a lobby and result collector that most games share and which is mostly not networking at all, and one real-time simulation layer for the three shared-world games.
+So the work splits into: a lobby and result collector that most games share and which is mostly not networking at all, and one real-time simulation layer for the two shared-world games.
 
 ## 3. Stack
 
@@ -98,7 +98,7 @@ Loading → ReadyCheck → Start → Playing → Results
 
 Between rounds, the game resets everything of its own — eliminations, progress, and anything else it keeps. Competition points never reset until the leaderboard has been shown.
 
-Several games have their own internal rounds or turns: Minefield's corridor sections, Stop the Clock's tiebreakers, Hidden Crossfire's aim/reveal cycles. Those are the game's business. From the outside, a scoring round hands back exactly one winner. If a game can end with nobody standing, it runs its own sudden-death to break it, and still returns one winner.
+Several games have their own internal rounds or turns: Stop the Clock's tiebreakers, Hidden Crossfire's aim/reveal cycles. Those are the game's business. From the outside, a scoring round hands back exactly one winner. If a game can end with nobody standing, it runs its own sudden-death to break it, and still returns one winner.
 
 The server keeps the score table. Games report a winner and never touch the leaderboard themselves.
 
@@ -192,10 +192,12 @@ Don't send a client a seed that generates hidden content — the seed reveals ev
 
 Enough per game to know what's being built. Full rules go in each game's own notes.
 
-### Minefield — shared
-Run a corridor, harvester chasing, hidden mines. A detector scans but only while nearly still. Server holds mines, simulates the harvester, resolves mine hits and the finish line. Mines are circles in a grid; only check nearby cells. The harvester is a moving box, not machinery.
+### Minefield — self-timed
+A race across a 2D tile map scattered with hidden mines, from a start line to a finish line (60 × 15 tiles). Each player runs with the arrow keys or WASD. Walking within a mine's trigger radius (0.7 tile) sets it off. The blast hurts every runner inside that radius at that moment, so two runners close together can both lose a life to the same mine. A mine goes off once and is then gone for everyone. A runner who is hit is held still for a 1 s explosion animation and loses a life. Each player has 2 lives, and losing the second ends their race. The mines get denser towards the finish.
 
-*Open:* is it a race, a survival, or last-alive? Do scans reveal exact positions or a direction?
+Space sends a sonar pulse that shows the mines within 4.5 tiles for 3 s. Sonar is shared: the mines a scan finds are shown to every player, so scouting helps everyone near that spot, and a player can follow someone else's trail. The runner has to stand still for the 0.9 s scan animation, and sonar then needs 4 s to recharge, so scanning costs time and the game is a balance of scanning, luck and pressing on. First across the line wins and everyone else loses; the winner gets a 5 s finish animation.
+
+It runs as a self-timed game like Log Dodge: the field is part of the round data, every browser simulates its own run and reports each key change and sonar press with a time, and the server replays all players together with the same fixed-step code (`shared/games/minefield/simulate.ts`), so shared mines are resolved in the order the reported times say, not the order messages arrived. Each browser shows its own run immediately and learns about other players' explosions from their progress messages (`mine`), so a runner's screen can briefly disagree with the final replay; the replay decides. Because the field is sent to every player, a player reading the network traffic could see the mines; this is accepted for a friendly office group. Every field is checked to have a route across that stays outside every trigger radius, so it is always possible. As soon as someone finishes, the others are told to stop and report, and nothing anyone did after the winner crossed counts. If nobody finishes, whoever got furthest wins. A dead heat goes to the runner's tiebreaker on a fresh field.
 
 ### Cube Counter — self-timed
 A block-counting memory game. Each puzzle flashes an isometric picture of a grid with blocks standing on it for a short moment (2 seconds), then hides it. The player types how many blocks they saw. The whole round is a series of puzzles that get harder.
@@ -358,7 +360,7 @@ One bit of self-protection is worth having: bound message sizes and entity count
 
 **The self-timed round runner.** Most games depend on it, so test: everyone reports; someone doesn't; nobody does; duplicate reports; exact ties; a late ready check pushing the start back; a result arriving after the round closed.
 
-**The competition layer**, with fake games standing in: random picks 5 unique, custom keeps order, per-game round counts (Stop the Clock 4, Crusher Escalator 2, Type Racer Roulette 2, Cube Counter 2, Log Dodge 2), one point per round, scores survive game changes and reconnects, leaderboard sorts and handles ties, a new competition clears the old one.
+**The competition layer**, with fake games standing in: random picks 5 unique, custom keeps order, per-game round counts (Stop the Clock 4, Crusher Escalator 2, Type Racer Roulette 2, Cube Counter 2, Log Dodge 2, Minefield 2), one point per round, scores survive game changes and reconnects, leaderboard sorts and handles ties, a new competition clears the old one.
 
 **Latency.** The one test worth writing specifically: a client with 300 ms added latency should get an identical result to one with none in every self-timed game. If latency changes a Stop the Clock outcome, timing has leaked into the network layer.
 
@@ -393,7 +395,7 @@ One bit of self-protection is worth having: bound message sizes and entity count
 
 **5. Movement layer.** The first real netcode: tick loop, input, snapshots, interpolation, prediction. Test this under packet loss, not just latency.
 
-**6. Minefield, Hexa-Gone, then Hidden Crossfire.** Reuse the shared-world layer. Hexa-Gone adds a shared tile grid that changes as players move; Hidden Crossfire adds private aim, freeze/reveal phases, and shrinking bounds.
+**6. Hexa-Gone, then Hidden Crossfire.** Reuse the shared-world layer. Hexa-Gone adds a shared tile grid that changes as players move; Hidden Crossfire adds private aim, freeze/reveal phases, and shrinking bounds.
 
 **7. Crusher Escalator.** The client runs its own race, so the work is press handling, the crusher display and the server-side replay, not live networking. Could move earlier if someone wants to build it.
 
@@ -419,10 +421,10 @@ Ship this:
 
 - 2-8 players, one server, no database.
 - Room codes, owner with automatic transfer.
-- Both playlist modes, per-game round counts (Stop the Clock 4, Crusher Escalator 2, Type Racer Roulette 2, Cube Counter 2, Log Dodge 2), one point per round, leaderboard at the end.
+- Both playlist modes, per-game round counts (Stop the Clock 4, Crusher Escalator 2, Type Racer Roulette 2, Cube Counter 2, Log Dodge 2, Minefield 2), one point per round, leaderboard at the end.
 - Three games: **Stop the Clock, Cube Counter, Log Dodge.**
 
-Those three cover the self-timed runner, server-held answers, and replay-judged timing. The remaining seven add game logic; Minefield, Hidden Crossfire, and Hexa-Gone also need the shared-world simulation layer.
+Those three cover the self-timed runner, server-held answers, and replay-judged timing. The remaining seven add game logic; Hidden Crossfire and Hexa-Gone also need the shared-world simulation layer.
 
 Explicitly not in v1: multiple server instances, Redis, a database, surviving a restart, accounts, matchmaking, delta compression, binary encoding, spectators if they turn out to be fiddly.
 
@@ -445,7 +447,7 @@ Everyone connects to one Socket.IO server. Whoever clicks "host a game" gets a r
 
 Most games run in the browser. The server hands out the round, waits for everyone to be ready, says go, and collects results. Latency never touches a measurement, which means no clock correction anywhere in the platform and very little networking in most of the catalogue.
 
-The three shared-world games run on the server, because players share hazards, positions, or elimination timing and need one authoritative outcome. Those use a tick loop, snapshots with interpolation, and local prediction where movement is allowed.
+The two shared-world games run on the server, because players share hazards, positions, or elimination timing and need one authoritative outcome. Those use a tick loop, snapshots with interpolation, and local prediction where movement is allowed.
 
 Shared code is: the lobby, the competition runner, the self-timed round runner, one shared-world layer, and the per-game rules. Everything else is specific to a game.
 

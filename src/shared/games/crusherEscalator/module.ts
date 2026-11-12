@@ -162,10 +162,10 @@ const openingTiming = (round: CrusherEscalatorRound): AttemptTiming | null =>
  * except by watching others.
  */
 const shouldCloseEarly = (
-    reportedCount: number,
+    reported: readonly CrusherEscalatorResult[],
     participantCount: number,
     round: CrusherEscalatorRound
-): boolean => reportedCount >= 1 && participantCount - reportedCount <= survivorsToEnd(round);
+): boolean => reported.length >= 1 && participantCount - reported.length <= survivorsToEnd(round);
 
 export const crusherEscalatorModule: SelfTimedGameModule<
     CrusherEscalatorRound,

@@ -99,10 +99,14 @@ export interface SelfTimedGameModule<TRound, TResult> {
      * once enough players have reported that the round must be over, and the
      * runner tells the rest to stop and report. They would otherwise keep
      * playing, because they only learn the round is over by watching others.
-     * Only the number of reports is passed in: the server decides nothing
-     * from it, the final ranking still replays every result.
+     * The server decides nothing from it: the final ranking still replays
+     * every result.
      */
-    shouldCloseEarly?(reportedCount: number, participantCount: number, round: TRound): boolean;
+    shouldCloseEarly?(
+        reported: readonly TResult[],
+        participantCount: number,
+        round: TRound
+    ): boolean;
 
     /** How long after the start the server waits before resolving without stragglers. */
     resultTimeoutMs(round: TRound): number;

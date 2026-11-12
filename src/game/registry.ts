@@ -11,6 +11,7 @@ import { GAME_CATALOG, type GameId } from '../shared/games/catalog';
 import type { SelfTimedGameModule } from '../shared/games/selfTimed';
 import { crusherEscalatorModule } from '../shared/games/crusherEscalator/module';
 import { cubeCounterModule } from '../shared/games/cubeCounter/module';
+import { minefieldModule } from '../shared/games/minefield/module';
 import { logDodgeModule } from '../shared/games/logDodge/module';
 import { createTypeRacerModule } from '../shared/games/typeRacer/module';
 import { stopTheClockModule } from '../shared/games/stopTheClock';
@@ -23,6 +24,7 @@ const SELF_TIMED_MODULES: Partial<Record<GameId, AnySelfTimedModule>> = {
     'crusher-escalator': crusherEscalatorModule,
     'cube-counter': cubeCounterModule,
     'log-dodge': logDodgeModule,
+    'minefield': minefieldModule,
     'stop-the-clock': stopTheClockModule,
     'type-racer-roulette': createTypeRacerModule(hmacRollFace)
 };

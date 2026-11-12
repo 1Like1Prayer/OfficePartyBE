@@ -454,8 +454,8 @@ export class SelfTimedRound<TRound, TResult> {
             return;
         }
         const pending = this.pendingPlayers();
-        const reportedCount = this.participants.size - pending.length;
-        if (!this.module.shouldCloseEarly(reportedCount, this.participants.size, this.round)) {
+        const reported = [...this.participants].flatMap((id) => this.results.get(id) ?? []);
+        if (!this.module.shouldCloseEarly(reported, this.participants.size, this.round)) {
             return;
         }
 

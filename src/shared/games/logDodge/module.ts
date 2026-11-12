@@ -117,8 +117,11 @@ const progressFromResult = (
 };
 
 /** Once everyone but one player has reported, the last one must stop and report too. */
-const shouldCloseEarly = (reportedCount: number, participantCount: number): boolean =>
-    participantCount >= 2 && reportedCount >= 1 && participantCount - reportedCount <= 1;
+const shouldCloseEarly = (
+    reported: readonly LogDodgeResult[],
+    participantCount: number
+): boolean =>
+    participantCount >= 2 && reported.length >= 1 && participantCount - reported.length <= 1;
 
 export const logDodgeModule: SelfTimedGameModule<LogDodgeRound, LogDodgeResult> = {
     id: 'log-dodge',

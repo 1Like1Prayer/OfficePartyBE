@@ -140,6 +140,7 @@ export class Room {
                     name: existing.name
                 });
             }
+            this.round?.rejoinParticipant(existing.playerId);
             this.broadcastState();
             this.sendRoundSnapshot(existing);
             return {
@@ -461,6 +462,8 @@ export class Room {
                     this.emitter.toRoom(ServerEvent.StartAt, payload),
                 onProgress: (payload) =>
                     this.emitter.toRoom(ServerEvent.RoundProgress, payload),
+                onRoundClosing: (payload) =>
+                    this.emitter.toRoom(ServerEvent.RoundClosing, payload),
                 onAttemptResolved: (payload) => this.onAttemptResolved(payload)
             }
         });
@@ -475,7 +478,10 @@ export class Room {
 
         // The game's ending animation plays first; the results screen's own
         // display time only starts once it is done.
-        const finishAnimationMs = this.round?.finishAnimationMs ?? 0;
+        // Only a real ending has an ending animation. A tiebreaker or a stage
+        // break is followed by another attempt, so sending the animation time
+        // with it would tell clients both "this is over" and "more is coming".
+        const finishAnimationMs = payload.isFinal ? (this.round?.finishAnimationMs ?? 0) : 0;
         const resultsDelayMs = finishAnimationMs + COMPETITION.RESULT_DISPLAY_MS;
         const nextRoundAtServerMs = payload.isFinal
             ? monotonicNowMs() + resultsDelayMs

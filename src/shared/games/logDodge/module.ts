@@ -102,6 +102,24 @@ const rank = (
     );
 };
 
+/**
+ * When a player's result comes in, tell the room how they got on, straight from
+ * the replay. A player who is knocked out shows as out to everyone even if
+ * their own progress messages were lost, which is what lets the last player
+ * standing know that the logs should stop.
+ */
+const progressFromResult = (
+    result: LogDodgeResult,
+    round: LogDodgeRound
+): Record<string, number> | null => {
+    const outcome = judgePlayer(round.logs, result.inputs);
+    return outcome.eliminatedAtMs === null ? null : { hits: LOG_DODGE.MAX_HITS };
+};
+
+/** Once everyone but one player has reported, the last one must stop and report too. */
+const shouldCloseEarly = (reportedCount: number, participantCount: number): boolean =>
+    participantCount >= 2 && reportedCount >= 1 && participantCount - reportedCount <= 1;
+
 export const logDodgeModule: SelfTimedGameModule<LogDodgeRound, LogDodgeResult> = {
     id: 'log-dodge',
     title: 'Log Dodge',
@@ -111,6 +129,8 @@ export const logDodgeModule: SelfTimedGameModule<LogDodgeRound, LogDodgeResult> 
     createRoundData: (context) => createRoundData(context),
     parseResult: (raw, round) => parseLogDodgeResult(raw, round.durationMs),
     parseProgress: (raw) => parseLogDodgeProgress(raw),
+    progressFromResult,
+    shouldCloseEarly,
     resultTimeoutMs,
     rank
 };

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CUBE_COUNTER } from './constants';
-import { difficultyForPuzzle } from './difficulty';
+import { difficultyForPuzzle, planDifficulty } from './difficulty';
 import { findStructureProblem } from './geometry';
 import { cubeCounterModule } from './module';
 import { parseCubeCounterProgress, parseCubeCounterResult } from './parsing';
@@ -137,10 +137,101 @@ test('hard puzzles really do contain big boxes and stacks', () => {
     assert.ok(sawBigBox && sawStack);
 });
 
-test('Cube Counter is one scoring round of consecutive puzzles', () => {
-    assert.equal(cubeCounterModule.roundsPerGame, 1);
-    const round = cubeCounterModule.createRoundData({ roundInGame: 1, roundsPerGame: 1, playerIds: [], attempt: 0 });
-    assert.equal(round.puzzles.length, CUBE_COUNTER.PUZZLES_PER_ROUND);
+test('Cube Counter is two scoring rounds of 8 puzzles each', () => {
+    assert.equal(cubeCounterModule.roundsPerGame, 2);
+    assert.equal(CUBE_COUNTER.PUZZLES_PER_ROUND, 8);
+    for (const roundInGame of [1, 2]) {
+        const round = cubeCounterModule.createRoundData({ roundInGame, roundsPerGame: 2, playerIds: [], attempt: 0 });
+        assert.equal(round.puzzles.length, 8);
+    }
+});
+
+test('each round gets its own puzzles', () => {
+    const context = { roundInGame: 1, roundsPerGame: 2, playerIds: [], attempt: 0 };
+    const first = cubeCounterModule.createRoundData(context);
+    const second = cubeCounterModule.createRoundData({ ...context, roundInGame: 2 });
+    assert.notDeepEqual(first.puzzles, second.puzzles);
+});
+
+/* ---------------- uneven hard puzzles ---------------- */
+
+test('the plan starts easy and keeps every count in range, with a steady warm-up', () => {
+    for (let seed = 1; seed <= 200; seed++) {
+        const plan = planDifficulty(8, seededRandom(seed));
+        assert.equal(plan.length, 8);
+        assert.equal(plan[0]!.boxCount, CUBE_COUNTER.EASIEST_BOX_COUNT, `seed ${seed}`);
+        for (const profile of plan) {
+            assert.ok(profile.boxCount >= CUBE_COUNTER.EASIEST_BOX_COUNT);
+            assert.ok(profile.boxCount <= CUBE_COUNTER.HARDEST_BOX_COUNT);
+        }
+        // The warm-up (before the hard end) still climbs steadily.
+        const warmUp = plan.slice(0, 3).map((p) => p.boxCount);
+        assert.deepEqual(warmUp, [...warmUp].sort((a, b) => a - b), `seed ${seed}`);
+    }
+});
+
+test('hard box counts are not a straight climb: they drop back and repeat', () => {
+    let droppedBack = 0;
+    for (let seed = 1; seed <= 200; seed++) {
+        const counts = planDifficulty(8, seededRandom(seed)).map((p) => p.boxCount);
+        if (counts.some((count, i) => i > 0 && count < counts[i - 1]!)) droppedBack++;
+    }
+    assert.ok(droppedBack > 60, `only ${droppedBack} of 200 rounds ever dropped back`);
+});
+
+test('hard puzzles pick their box count at random from 9 to 14', () => {
+    const seen = new Set<number>();
+    for (let seed = 1; seed <= 300; seed++) {
+        const plan = planDifficulty(8, seededRandom(seed));
+        for (const profile of plan.slice(3)) {
+            assert.ok(profile.boxCount >= 9 && profile.boxCount <= 14, `seed ${seed}`);
+            seen.add(profile.boxCount);
+        }
+    }
+    assert.deepEqual([...seen].sort((a, b) => a - b), [9, 10, 11, 12, 13, 14]);
+});
+
+test('nothing forces a repeated count: some rounds have none, some have one by chance', () => {
+    let withRepeat = 0;
+    for (let seed = 1; seed <= 300; seed++) {
+        const counts = planDifficulty(8, seededRandom(seed)).map((p) => p.boxCount);
+        if (counts.some((count, i) => i > 0 && count === counts[i - 1])) withRepeat++;
+    }
+    assert.ok(withRepeat > 0 && withRepeat < 300, `${withRepeat} of 300`);
+});
+
+test('hard puzzles come in layered and sprawling styles, and both generate valid scenes', () => {
+    const layered = new Set<number>();
+    const stackBiases = new Set<number>();
+    for (let seed = 1; seed <= 100; seed++) {
+        const random = seededRandom(seed);
+        for (const profile of planDifficulty(8, random)) {
+            stackBiases.add(profile.stackBias);
+            const boxes = generateScene(profile, random);
+            assert.equal(findSceneProblem(boxes), null, `seed ${seed}`);
+            layered.add(Math.max(...boxes.map((b) => b.z)));
+        }
+    }
+    assert.ok(stackBiases.has(0.85) && stackBiases.has(0.05));
+    assert.ok(layered.has(0) && layered.has(2), [...layered].join());
+});
+
+test('a layered scene really is more stacked than a sprawl with the same box count', () => {
+    const base = difficultyForPuzzle(7, 8);
+    const layeredProfile = { ...base, boxCount: 10, maxFootprintSide: 3, bigBoxChance: 0.6, maxStackLevels: 3, stackBias: 0.85 };
+    const sprawlProfile = { ...base, boxCount: 10, bigBoxChance: 0.1, stackBias: 0.05 };
+    const meanLevel = (profile: typeof base) => {
+        let total = 0;
+        let boxesSeen = 0;
+        for (let seed = 1; seed <= 60; seed++) {
+            for (const b of generateScene(profile, seededRandom(seed))) {
+                total += b.z;
+                boxesSeen++;
+            }
+        }
+        return total / boxesSeen;
+    };
+    assert.ok(meanLevel(layeredProfile) > meanLevel(sprawlProfile) + 0.3);
 });
 
 test('puzzles differ in size and composition across the round', () => {

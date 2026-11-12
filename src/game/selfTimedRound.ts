@@ -26,6 +26,7 @@ import type { GameId } from '../shared/games/catalog';
 import type {
     ErrorCode,
     ProgressPayload,
+    RoundClosingPayload,
     ReadyStatePayload,
     RoundDataPayload,
     RoundPhase,
@@ -62,6 +63,8 @@ export interface SelfTimedRoundEvents {
     onReadyState(payload: ReadyStatePayload): void;
     onStartAt(payload: StartAtPayload): void;
     onProgress(payload: ProgressPayload): void;
+    /** Optional: only games that can end early use it. */
+    onRoundClosing?(payload: RoundClosingPayload): void;
     onAttemptResolved(payload: AttemptResolved): void;
 }
 
@@ -108,6 +111,25 @@ export class SelfTimedRound<TRound, TResult> {
     private lastProgressAt = new Map<string, number>();
     /** The newest progress each player sent, so a reconnecting client can catch up. */
     private latestProgress = new Map<string, Record<string, number>>();
+    /**
+     * A progress update that arrived inside the rate limit is not thrown away:
+     * the newest one waits here and goes out when the limit allows. Otherwise a
+     * player who pauses right after two quick updates would look stuck on
+     * everyone else's screen.
+     */
+    private trailingProgress = new Map<
+        string,
+        { progress: Record<string, number>; timer: NodeJS.Timeout }
+    >();
+    /**
+     * Players whose connection dropped during this attempt. A brief network
+     * blip must not cost them the round, so they can rejoin it (see
+     * `rejoinParticipant`).
+     */
+    private droppedParticipants = new Set<string>();
+    /** Set once the stragglers have been told to stop; reset every attempt. */
+    private closingSent = false;
+    private closingTimer: NodeJS.Timeout | null = null;
     private startAtServerMs: number | null = null;
     private readyDeadlineMs = 0;
     private timer: NodeJS.Timeout | null = null;
@@ -142,6 +164,8 @@ export class SelfTimedRound<TRound, TResult> {
     cancel(): void {
         this.cancelled = true;
         this.clearTimer();
+        this.clearClosingTimer();
+        this.clearTrailingProgress();
         this.phase = 'idle';
     }
 
@@ -170,6 +194,10 @@ export class SelfTimedRound<TRound, TResult> {
         this.results.clear();
         this.lastProgressAt.clear();
         this.latestProgress.clear();
+        this.clearTrailingProgress();
+        this.droppedParticipants.clear();
+        this.closingSent = false;
+        this.clearClosingTimer();
         this.startAtServerMs = null;
 
         // Loading: the round data goes out and clients build whatever they need.
@@ -248,7 +276,13 @@ export class SelfTimedRound<TRound, TResult> {
         }
 
         this.results.set(playerId, parsed);
+        const reported = this.module.progressFromResult?.(parsed, this.round) ?? null;
+        if (reported !== null) {
+            this.clearTrailingProgress(playerId);
+            this.emitProgress(playerId, reported);
+        }
         if (this.pendingPlayers().length === 0) this.resolve();
+        else this.closeEarlyIfDecided();
         return { ok: true };
     }
 
@@ -291,14 +325,23 @@ export class SelfTimedRound<TRound, TResult> {
             return;
         }
 
-        const now = monotonicNowMs();
-        const last = this.lastProgressAt.get(playerId) ?? -Infinity;
-        if (now - last < SELF_TIMED.PROGRESS_MIN_INTERVAL_MS) return;
-
         const progress = this.module.parseProgress(raw, this.round);
         if (progress === null) return;
 
-        this.lastProgressAt.set(playerId, now);
+        const now = monotonicNowMs();
+        const last = this.lastProgressAt.get(playerId) ?? -Infinity;
+        const waitMs = SELF_TIMED.PROGRESS_MIN_INTERVAL_MS - (now - last);
+        if (waitMs > 0) {
+            this.deferProgress(playerId, progress, waitMs);
+            return;
+        }
+
+        this.clearTrailingProgress(playerId);
+        this.emitProgress(playerId, progress);
+    }
+
+    private emitProgress(playerId: string, progress: Record<string, number>): void {
+        this.lastProgressAt.set(playerId, monotonicNowMs());
         this.latestProgress.set(playerId, progress);
         this.events.onProgress({
             roundId: this.roundId,
@@ -306,6 +349,61 @@ export class SelfTimedRound<TRound, TResult> {
             playerId,
             progress
         });
+    }
+
+    /** Hold the newest update until the rate limit allows it; a newer one replaces it. */
+    private deferProgress(
+        playerId: string,
+        progress: Record<string, number>,
+        waitMs: number
+    ): void {
+        const waiting = this.trailingProgress.get(playerId);
+        if (waiting !== undefined) {
+            waiting.progress = progress;
+            return;
+        }
+        const timer = setTimeout(() => {
+            const entry = this.trailingProgress.get(playerId);
+            this.trailingProgress.delete(playerId);
+            if (
+                entry === undefined ||
+                this.phase !== 'playing' ||
+                !this.participants.has(playerId)
+            ) {
+                return;
+            }
+            this.emitProgress(playerId, entry.progress);
+        }, waitMs);
+        this.trailingProgress.set(playerId, { progress, timer });
+    }
+
+    private clearTrailingProgress(playerId?: string): void {
+        for (const [id, entry] of this.trailingProgress) {
+            if (playerId !== undefined && id !== playerId) continue;
+            clearTimeout(entry.timer);
+            this.trailingProgress.delete(id);
+        }
+    }
+
+    /**
+     * A player's connection came back while their attempt is still running.
+     * They go back into it, so their progress shows, their requests (like a
+     * dice roll) are answered and their result is accepted. Returns whether
+     * they were put back.
+     */
+    rejoinParticipant(playerId: string): boolean {
+        if (!this.droppedParticipants.has(playerId)) return false;
+        const running =
+            this.phase === 'ready-check' ||
+            this.phase === 'starting' ||
+            this.phase === 'countdown' ||
+            this.phase === 'playing';
+        if (!running) return false;
+
+        this.droppedParticipants.delete(playerId);
+        this.participants.add(playerId);
+        if (this.phase === 'ready-check') this.emitReadyState();
+        return true;
     }
 
     /**
@@ -316,6 +414,8 @@ export class SelfTimedRound<TRound, TResult> {
         if (!this.participants.has(playerId)) return;
         this.participants.delete(playerId);
         this.ready.delete(playerId);
+        this.droppedParticipants.add(playerId);
+        this.clearTrailingProgress(playerId);
 
         if (this.phase === 'ready-check') {
             this.emitReadyState();
@@ -323,6 +423,7 @@ export class SelfTimedRound<TRound, TResult> {
             else if (this.allReady()) this.scheduleStart();
         } else if (this.phase === 'playing') {
             if (this.pendingPlayers().length === 0) this.resolve();
+            else this.closeEarlyIfDecided();
         }
     }
 
@@ -336,6 +437,44 @@ export class SelfTimedRound<TRound, TResult> {
             if (!this.ready.has(playerId)) return false;
         }
         return true;
+    }
+
+    /**
+     * For games that end before everyone has finished: once the game says
+     * enough players have reported, tell the rest to stop and report now, and
+     * give them a short grace before scoring without them. Sent once per attempt.
+     */
+    private closeEarlyIfDecided(): void {
+        if (
+            this.closingSent ||
+            this.phase !== 'playing' ||
+            this.round === null ||
+            this.module.shouldCloseEarly === undefined
+        ) {
+            return;
+        }
+        const pending = this.pendingPlayers();
+        const reportedCount = this.participants.size - pending.length;
+        if (!this.module.shouldCloseEarly(reportedCount, this.participants.size, this.round)) {
+            return;
+        }
+
+        this.closingSent = true;
+        this.events.onRoundClosing?.({
+            roundId: this.roundId,
+            attempt: this.attemptIndex,
+            pending,
+            graceMs: SELF_TIMED.CLOSING_GRACE_MS
+        });
+        this.closingTimer = setTimeout(() => {
+            this.closingTimer = null;
+            if (this.phase === 'playing') this.resolve();
+        }, SELF_TIMED.CLOSING_GRACE_MS);
+    }
+
+    private clearClosingTimer(): void {
+        if (this.closingTimer) clearTimeout(this.closingTimer);
+        this.closingTimer = null;
     }
 
     private pendingPlayers(): string[] {
@@ -408,6 +547,8 @@ export class SelfTimedRound<TRound, TResult> {
     private resolve(): void {
         if (this.cancelled || this.phase === 'results' || this.round === null) return;
         this.clearTimer();
+        this.clearClosingTimer();
+        this.clearTrailingProgress();
         this.phase = 'results';
 
         const entries: ResultEntry<TResult>[] = [...this.results].map(

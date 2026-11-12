@@ -50,6 +50,7 @@ export const ServerEvent = {
     ReadyState: 'round:readyState',
     StartAt: 'round:startAt',
     RoundProgress: 'round:progress',
+    RoundClosing: 'round:closing',
     RoundResults: 'round:results',
     ProtocolMismatch: 'protocol:mismatch',
     Error: 'error'
@@ -220,6 +221,18 @@ export interface RoundDataPayload<TRound = unknown> extends RoundEnvelope {
     progress?: Record<string, Record<string, number>>;
 }
 
+/**
+ * Sent when the round has been decided as far as the server can tell, and the
+ * players listed in `pending` are still playing: they must stop and send the
+ * result they have now. It decides nothing by itself; the server still replays
+ * every result before naming a winner.
+ */
+export interface RoundClosingPayload extends RoundEnvelope {
+    pending: string[];
+    /** After this long the server stops waiting for them and scores without them. */
+    graceMs: number;
+}
+
 export interface ReadyStatePayload extends RoundEnvelope {
     ready: string[];
     waitingFor: string[];
@@ -271,7 +284,9 @@ export interface RoundResultsPayload extends RoundEnvelope {
     stageBreakMs: number;
     /**
      * Milliseconds clients have to play the ending animation before the
-     * results screen's own display time starts. Zero for most games.
+     * results screen's own display time starts. Zero for most games, and
+     * always zero when `isFinal` is false: a tiebreaker or a stage break is
+     * not an ending, so it never carries an ending animation.
      */
     finishAnimationMs: number;
     nextRoundAtServerMs: number | null;

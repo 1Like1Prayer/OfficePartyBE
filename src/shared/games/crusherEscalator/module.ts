@@ -155,6 +155,18 @@ const openingTiming = (round: CrusherEscalatorRound): AttemptTiming | null =>
           }
         : null;
 
+/**
+ * The race is over once only `survivorsToEnd` players are left, so as soon as
+ * that many fewer than everyone have been crushed and reported, the players
+ * still racing must stop and report: they can't tell the race has ended
+ * except by watching others.
+ */
+const shouldCloseEarly = (
+    reportedCount: number,
+    participantCount: number,
+    round: CrusherEscalatorRound
+): boolean => reportedCount >= 1 && participantCount - reportedCount <= survivorsToEnd(round);
+
 export const crusherEscalatorModule: SelfTimedGameModule<
     CrusherEscalatorRound,
     CrusherEscalatorResult
@@ -170,5 +182,6 @@ export const crusherEscalatorModule: SelfTimedGameModule<
     resultTimeoutMs,
     rank,
     openingTiming,
-    nextStage
+    nextStage,
+    shouldCloseEarly
 };

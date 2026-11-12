@@ -85,6 +85,25 @@ export interface SelfTimedGameModule<TRound, TResult> {
     /** Parse an untrusted progress update, or null to drop it. */
     parseProgress(raw: unknown, round: TRound): Record<string, number> | null;
 
+    /**
+     * Optional. What the server itself can tell everyone about a player once
+     * their result is in, shown like a progress update. It does not depend on
+     * the player's own progress messages arriving, so it is a reliable way to
+     * tell the room that someone is out. Return null to say nothing.
+     */
+    progressFromResult?(result: TResult, round: TRound): Record<string, number> | null;
+
+    /**
+     * Optional, for games that end before everyone has finished (Crusher
+     * Escalator, Log Dodge). Called after each result comes in. Return true
+     * once enough players have reported that the round must be over, and the
+     * runner tells the rest to stop and report. They would otherwise keep
+     * playing, because they only learn the round is over by watching others.
+     * Only the number of reports is passed in: the server decides nothing
+     * from it, the final ranking still replays every result.
+     */
+    shouldCloseEarly?(reportedCount: number, participantCount: number, round: TRound): boolean;
+
     /** How long after the start the server waits before resolving without stragglers. */
     resultTimeoutMs(round: TRound): number;
 

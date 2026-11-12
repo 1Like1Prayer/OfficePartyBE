@@ -21,21 +21,22 @@ test('each game is played for its own number of rounds', () => {
         'stop-the-clock:2/4',
         'stop-the-clock:3/4',
         'stop-the-clock:4/4',
-        'cube-counter:1/1'
+        'cube-counter:1/2',
+        'cube-counter:2/2'
     ]);
 });
 
 test('playlist description reports rounds per game and the total', () => {
     const description = newCompetition(['cube-counter', 'stop-the-clock']).describePlaylist();
-    assert.deepEqual(description.roundsByGame, { 'cube-counter': 1, 'stop-the-clock': 4 });
-    assert.equal(description.totalRounds, 5);
+    assert.deepEqual(description.roundsByGame, { 'cube-counter': 2, 'stop-the-clock': 4 });
+    assert.equal(description.totalRounds, 6);
 });
 
-test('one point per scoring round, so Stop the Clock offers 4 and Cube Counter 1', () => {
+test('one point per scoring round, so Stop the Clock offers 4 and Cube Counter 2', () => {
     const competition = newCompetition(['stop-the-clock', 'cube-counter']);
     for (let position = competition.position(); position; position = competition.position()) {
         competition.award('a');
         competition.advance();
     }
-    assert.equal(competition.scoreRows()[0]?.points, 5);
+    assert.equal(competition.scoreRows()[0]?.points, 6);
 });

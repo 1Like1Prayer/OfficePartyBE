@@ -80,6 +80,11 @@ export const SELF_TIMED = {
     PROGRESS_HZ: 5,
     /** Server-side floor on the gap between progress messages from one player. */
     PROGRESS_MIN_INTERVAL_MS: 120,
+    /**
+     * Once a game says the round is decided (see `shouldCloseEarly`), players
+     * who haven't reported get this long to stop and send their result.
+     */
+    CLOSING_GRACE_MS: 5_000,
     /** A scoring round runs at most this many tiebreakers before coin-flipping. */
     MAX_TIEBREAK_ATTEMPTS: 3
 } as const;

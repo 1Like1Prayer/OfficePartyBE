@@ -13,8 +13,8 @@ export const COUNTER_ACTION = {
 } as const;
 
 export const LOG_DODGE = {
-    /** One scoring round, one winner. */
-    ROUNDS_PER_GAME: 1,
+    /** Two scoring rounds per game, each with its own schedule and one winner. */
+    ROUNDS_PER_GAME: 2,
 
     /** Everyone still standing at this time has survived. */
     DURATION_MS: 60_000,

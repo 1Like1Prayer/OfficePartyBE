@@ -10,7 +10,7 @@
 import { randomInt, type RandomSource } from '../random';
 import { CUBE_COUNTER } from './constants';
 import type { DifficultyProfile } from './difficulty';
-import { difficultyForPuzzle } from './difficulty';
+import { planDifficulty } from './difficulty';
 import { footprintCells } from './footprint';
 import { findSceneProblem } from './sceneValidation';
 import type { Box, Puzzle } from './types';
@@ -66,12 +66,20 @@ const tryPlaceBox = (
     profile: DifficultyProfile,
     random: RandomSource
 ): Box | null => {
+    // Roll once whether this box should go on top of others or on the floor.
+    // The first half of the tries insist on it; after that any spot will do,
+    // so a scene never fails just because its preferred spots ran out.
+    const wantsStack = profile.maxStackLevels > 1 && random() < profile.stackBias;
+    const insistentTries = CUBE_COUNTER.MAX_PLACEMENT_TRIES_PER_BOX / 2;
+
     for (let attempt = 0; attempt < CUBE_COUNTER.MAX_PLACEMENT_TRIES_PER_BOX; attempt++) {
         const { width, depth } = pickFootprint(profile, random);
         const x = randomInt(random, 0, GRID_SIZE - width);
         const y = randomInt(random, 0, GRID_SIZE - depth);
         const z = restingLevel(heights, { x, y, width, depth }, profile.maxStackLevels);
-        if (z !== null) return { x, y, z, width, depth };
+        if (z === null) continue;
+        if (attempt < insistentTries && wantsStack !== z > 0) continue;
+        return { x, y, z, width, depth };
     }
     return null;
 };
@@ -108,12 +116,12 @@ export const generateScene = (
     return FALLBACK_BOXES.map((box) => ({ ...box }));
 };
 
-/** The full set of puzzles for one scoring round, easiest first. */
+/** The full set of puzzles for one scoring round: an easy start, then a hard, uneven end. */
 export const generatePuzzles = (
     random: RandomSource = Math.random,
     puzzleCount: number = CUBE_COUNTER.PUZZLES_PER_ROUND
 ): Puzzle[] =>
-    Array.from({ length: puzzleCount }, (_, puzzleIndex) => {
-        const profile = difficultyForPuzzle(puzzleIndex, puzzleCount);
-        return { boxes: generateScene(profile, random), flashMs: profile.flashMs };
-    });
+    planDifficulty(puzzleCount, random).map((profile) => ({
+        boxes: generateScene(profile, random),
+        flashMs: profile.flashMs
+    }));

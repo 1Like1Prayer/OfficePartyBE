@@ -36,7 +36,7 @@ export const GAME_CATALOG: Record<GameId, GameMeta> = {
     'type-racer-roulette': { id: 'type-racer-roulette', title: 'Type Racer Roulette', kind: 'self-timed', implemented: true },
     'liars-deck': { id: 'liars-deck', title: "Liar's Deck", kind: 'turn-based', implemented: false },
     'hidden-crossfire': { id: 'hidden-crossfire', title: 'Hidden Crossfire', kind: 'shared-world', implemented: false },
-    'log-dodge': { id: 'log-dodge', title: 'Log Dodge', kind: 'shared-world', implemented: false },
+    'log-dodge': { id: 'log-dodge', title: 'Log Dodge', kind: 'self-timed', implemented: true },
     'word-bomb': { id: 'word-bomb', title: 'Word Bomb', kind: 'turn-based', implemented: false }
 };
 

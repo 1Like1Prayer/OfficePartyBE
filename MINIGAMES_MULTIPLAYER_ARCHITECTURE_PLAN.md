@@ -26,9 +26,9 @@ Games without supplied titles use working names:
 
 This is the decision everything else follows from.
 
-**Four games are played alone, together.** Stop the Clock, Cube Counter, Crusher Escalator, and Type Racer Roulette all have each player doing their own thing in their own space. Nothing you do affects my scene, my lane, or my timer. For these, **the browser runs the whole game and reports the result.** The server hands out the round data, waits for everyone to be ready, says go, and collects what comes back.
+**Five games are played alone, together.** Stop the Clock, Cube Counter, Crusher Escalator, Type Racer Roulette, and Log Dodge (its logs follow a fixed timed schedule, so there is no physics to agree on) all have each player doing their own thing in their own space. Nothing you do affects my scene, my lane, or my timer. For these, **the browser runs the whole game and reports the result.** The server hands out the round data, waits for everyone to be ready, says go, and collects what comes back.
 
-**Three games use a shared world.** Minefield, Hidden Crossfire, and Log Dodge share hazards, positions, or elimination timing. Two browsers cannot agree on who got hit, so the server runs those. Hidden Crossfire also keeps each player's aim private until the reveal; Log Dodge uses a fixed lineup rather than free movement.
+**Two games use a shared world.** Minefield and Hidden Crossfire share hazards or positions. Two browsers cannot agree on who got hit, so the server runs those. Hidden Crossfire also keeps each player's aim private until the reveal.
 
 **Two games are turn-based.** Liar's Deck and Word Bomb use server-owned turns and validated actions rather than continuous movement. The server holds private cards in Liar's Deck, and manages word deadlines and power-ups in Word Bomb.
 
@@ -319,12 +319,12 @@ The server owns positions, private aim, the phase deadline, map bounds, and elim
 
 *Open:* exact aim/reveal timings, shot width and range, map-shrink rules, what happens to players outside the new bounds, and sudden-death rules if everyone is eliminated together.
 
-### Log Dodge — shared
-All players stand in a line while logs come toward them. Each incoming log demands a quick choice: jump or duck. Players hit by a log are eliminated; last survivor wins.
+### Log Dodge — self-timed
+Everyone runs in place on a treadmill while the same lineup of logs (low or high) comes at them. There is no physics: each log has an arrival time and a visual approach angle. The player must press the matching action (jump for low, duck for high) within ±0.5 s of the arrival, or the log is a hit. Three hits knock a player out. Logs take 2 to 4 s to reach the player depending on their speed and arrive closer together (never under 0.3 s apart) as the round ramps up, reaching full difficulty at about 40 s and staying there, with wider angles too. Anyone still standing after 60 s has survived. If only one player is left before then, the logs stop at that moment, that player wins, and clients play a 5 s win animation.
 
-The server owns the common obstacle timing, jump/duck action windows, collisions, and eliminations. Clients animate the approach and their own response immediately. Jump and duck are discrete actions, not movement vectors to discard through input coalescing.
+It runs as a self-timed game like Crusher Escalator: every browser plays the shared, public schedule locally and reports each press with a time, and the server replays the presses against the schedule (`shared/games/logDodge/judge.ts`). Latency cannot change who got hit, and no shared-world simulation is needed. A press within 300 ms of the previous one is ignored, so mashing every button does not work.
 
-*Open:* log patterns and warning time, action duration and cooldowns, whether ducking is held or tapped, difficulty progression, and simultaneous-last-elimination tiebreaks.
+A scoring round still returns exactly one winner: survivors are ordered by fewest hits, then by average timing error, and anyone still level goes to the runner's tiebreaker, which plays a fresh schedule among just those players.
 
 ### Word Bomb — turn-based, with power-ups
 Players take timed turns submitting a word that matches the required letter combination. Each correct word earns in-game points. While waiting for their turn, players can spend those points to activate power-ups:
